@@ -1618,7 +1618,8 @@ def firo_pay():
     db   = get_db()
     base = _get_site_base()
 
-    # Reuse an existing pending checkout so the user never pays twice
+    # Reuse ONLY if there's a pending checkout that was NOT cancelled
+    # (cancelled payments get a fresh checkout on next attempt)
     existing = db.execute(
         "SELECT checkout_url FROM firo_payments "
         "WHERE token_id=? AND status='pending' "
@@ -1801,6 +1802,32 @@ def firo_status():
 def firo_cancel():
     if _is_admin():
         return redirect(url_for("admin_dashboard"))
+
+    # Mark any pending payment from FiroGate cancel redirect as cancelled
+    # so firo_pay creates a fresh checkout next time instead of reusing old URL
+    payment_id = request.args.get("payment_id", "")
+    raw        = request.cookies.get("dn_token", "")
+    tok        = _get_token_row(raw)
+
+    if tok and payment_id:
+        db = get_db()
+        # Mark by FiroGate payment_id (stored in checkout_url) OR order_id
+        db.execute(
+            "UPDATE firo_payments SET status='cancelled' "
+            "WHERE token_id=? AND status='pending' "
+            "AND (order_id LIKE ? OR checkout_url LIKE ?)",
+            (tok["id"], f"%{payment_id}%", f"%{payment_id}%")
+        )
+        # Also mark ALL pending for this token as cancelled — clean slate
+        db.execute(
+            "UPDATE firo_payments SET status='cancelled' "
+            "WHERE token_id=? AND status='pending'",
+            (tok["id"],)
+        )
+        db.commit()
+        app.logger.info("firo_cancel: marked pending payments cancelled for tok=%s pid=%s",
+                        tok["id"][:8], payment_id)
+
     return render_template("verify_cancel.html")
 
 
