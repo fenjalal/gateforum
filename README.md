@@ -374,4 +374,4 @@ Check if the site is online (the server may be offline): [GateForum Site](https:
 
 </div>
 
-> Contributor fen & parood
+> Contributors fen & parood
