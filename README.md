@@ -357,15 +357,13 @@ Please:
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) file.
-
 Free to use, modify, and distribute. Attribution appreciated.
 
 ---
 
 <div align="center">
 
-**GateForum** — Open Source · Created by Fen & ai
+**GateForum** — Open Source · freedom is key
 
 *Built for privacy. Built for anonymity. Built to last.*
 
