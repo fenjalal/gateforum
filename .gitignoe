@@ -10,11 +10,11 @@ accesskeyadmindd.txt
 instance/DNet.db
 instance/*.db
 instance/
-
+instance
 # User-uploaded content
 static/uploads/
 static/avatars/
-
+testtoken.txt
 # Python cache
 __pycache__/
 *.py[cod]
