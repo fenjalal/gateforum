@@ -10,8 +10,10 @@ accesskeyadmindd.txt
 instance/DNet.db
 instance/*.db
 instance/DNet.db
-instance
+instance/
 # User-uploaded content
+# Static content
+static/favicon11.ico
 static/uploads/
 static/avatars/
 testtoken.txt

@@ -119,21 +119,30 @@ DNet_ADMIN_SUFFIX=your_other_random_word
 DNet_HOST=127.0.0.1
 DNet_PORT=5000
 
-# FiroGate payment gateway (required for verified badges)
+# FiroGate is payment gateway (required for verified badges) build by Fen
+# Clearnet API base (default):
+FIROGATE_BASE_URL=https://api.firogate.com
+
+# if your site run on tor hidden service use firogate onion link
+FIROGATE_ONION_URL=http://put-here-firogate-link.onion
 FIROGATE_API_KEY=fgate_your_key_here
 FIROGATE_WEBHOOK_SECRET=your_webhook_secret
-
-# Your site's public URL (required for payment redirects)
-# Tor:      SITE_BASE_URL=http://yourxxxxxxxx.onion
-# Clearnet: SITE_BASE_URL=https://yourdomain.com
-SITE_BASE_URL=
+FIROGATE_TIMEOUT_MIN=20
 
 # Optional Tor proxy for FiroGate requests
 FIROGATE_USE_TOR=0
 FIROGATE_TOR_PROXY=socks5h://127.0.0.1:9050
+
+# Your site's public URL (required for payment redirects)
+# if Tor:   SITE_BASE_URL=http://yourxxxxxxxx.onion
+# if Clearnet: SITE_BASE_URL=https://yourdomain.com
+SITE_BASE_URL=
+
+# set your price manually in .env for users to get verified badge and posts
+FIROGATE_VERIFY_AMOUNT=1.99
 ```
 
-### 5. Run the database migration
+### 5.if something change on db Run migration
 
 ```bash
 python3 migrate.py

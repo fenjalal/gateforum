@@ -1440,10 +1440,14 @@ def _firogate_request(endpoint: str, payload: dict, method: str = "POST") -> dic
     )
     use_tor = FIROGATE_USE_TOR or bool(FIROGATE_ONION_URL) or request_via_onion
 
+    # Choose base URL:
+    # 1. FIROGATE_ONION_URL set → use it (Tor)
+    # 2. request came via .onion → use clearnet URL but route through Tor proxy
+    # 3. Otherwise → clearnet directly
     if FIROGATE_ONION_URL:
         base = FIROGATE_ONION_URL.rstrip("/")
     else:
-        base = FIROGATE_BASE_URL.rstrip("/")
+        base = FIROGATE_BASE_URL.rstrip("/")   # https://api.firogate.com
 
     url     = f"{base}{endpoint}"
     headers = {"Content-Type": "application/json", "X-API-Key": FIROGATE_API_KEY}
