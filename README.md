@@ -12,7 +12,7 @@ Zero tracking. Zero ads. Zero external connections.
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](#license)
 [![Open Source](https://img.shields.io/badge/Open%20Source-%E2%9D%A4-red?style=flat-square)](#)
 
-> Created by **Developer Fen**
+> Created by **Fen & ai**
 
 </div>
 
