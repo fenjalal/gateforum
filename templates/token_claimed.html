@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Token Claimed — GateForum{% endblock %}
+{% block content %}
+<div class="page-grid"><div></div>
+<div class="form-wrap">
+  <div class="form-title">Token Claimed Successfully</div>
+  
+  {% if display_name %}
+  <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:.7rem .9rem;margin-bottom:1rem">
+    <div style="font-family:var(--mono);font-size:.55rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.2rem">Your Display Name</div>
+    <div style="font-family:var(--mono);font-size:1rem;color:var(--accent);font-weight:700">{{ display_name }}</div>
+  </div>
+  {% endif %}
+  
+  <div class="token-reveal" style="background:rgba(39,174,96,.08);border-color:var(--green)">
+    <strong style="color:var(--green)">Your Token (save it now!):</strong>
+    <code style="word-break:break-all;font-size:.78rem;display:block;margin-top:.5rem;color:var(--text-head)">{{ token }}</code>
+  </div>
+  
+  <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:.9rem 1rem;margin-bottom:1.2rem">
+    <div style="font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:.5rem">Important</div>
+    <ul style="font-size:.85rem;color:var(--text);line-height:1.7;margin-left:1.2rem">
+      <li>This token is <strong style="color:var(--text-head)">yours</strong> — keep it safe and private.</li>
+      <li>Use this token to <strong style="color:var(--text-head)">log in anytime</strong> at <code style="font-size:.75rem;background:var(--bg4);padding:.1rem .3rem;border-radius:2px">/token-access</code></li>
+      <li>You can now <strong style="color:var(--text-head)">create posts</strong> under your name.</li>
+      <li>This token will <strong style="color:var(--red)">not be shown again</strong> — copy it now!</li>
+    </ul>
+  </div>
+  
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+    <a href="{{ url_for('contributor_dashboard') }}" class="btn btn-primary">Go to Dashboard</a>
+    <a href="{{ url_for('index') }}" class="btn btn-ghost">Back to Home</a>
+  </div>
+</div>
+<div></div></div>
+{% endblock %}

@@ -1,0 +1,30 @@
+<aside class="sidebar sidebar-left">
+  <div class="panel">
+    <div class="panel-title">
+      <svg width="9" height="9" viewBox="0 0 16 16"><path fill="var(--accent)" fill-rule="evenodd" d="M7.999 1a.75.75 0 0 1 .715.521L12 11.79l1.286-4.018A.75.75 0 0 1 14 7.25h1.25a.75.75 0 0 1 0 1.5h-.703l-1.833 5.729a.75.75 0 0 1-1.428 0L8.005 4.226l-2.29 7.25a.75.75 0 0 1-1.42.03L3.031 8.03l-.07.208a.75.75 0 0 1-.711.513H.75a.75.75 0 0 1 0-1.5h.96l.578-1.737a.75.75 0 0 1 1.417-.02L4.95 8.919l2.335-7.394A.75.75 0 0 1 7.999 1Z" clip-rule="evenodd"/></svg>
+      Stats
+    </div>
+    <div class="stat-row"><span class="stat-l">Posts</span><span class="stat-v">{{ sidebar.total_posts }}</span></div>
+    <div class="stat-row"><span class="stat-l">Views</span><span class="stat-v">{{ sidebar.total_views }}</span></div>
+  </div>
+  <div class="panel">
+    <a href="{{ url_for('chat_page') }}" class="panel-link">
+      <svg width="12" height="12" viewBox="0 0 24 24"><path fill="var(--accent)" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2m0 14H6l-2 2V4h16z"/></svg>
+      Anonymous Chat
+    </a>
+  </div>
+  <div class="panel">
+    <div class="panel-title">
+      <svg width="9" height="9" viewBox="0 0 24 24"><g fill="none"><path fill="var(--accent)" d="M5 18v3a1 1 0 1 1-2 0v-3a1 1 0 1 1 2 0m5-4a1 1 0 1 0-2 0v7a1 1 0 1 0 2 0zm4 1a1 1 0 0 1 1 1v5a1 1 0 1 1-2 0v-5a1 1 0 0 1 1-1m6-4a1 1 0 1 0-2 0v10a1 1 0 1 0 2 0z"/><path fill="url(#fluentColorArrowTrendingLines241)" d="M17 4a1 1 0 1 1 0-2h4a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0V5.414l-5.793 5.793a1 1 0 0 1-1.414 0L10 8.414l-5.293 5.293a1 1 0 0 1-1.414-1.414l6-6a1 1 0 0 1 1.414 0L13.5 9.086L18.586 4z"/><defs><linearGradient id="fluentColorArrowTrendingLines240" x1="21.109" x2=".978" y1="9.308" y2="20.334" gradientUnits="userSpaceOnUse"><stop stop-color="#0094F0"/><stop offset="1" stop-color="#2764E7"/></linearGradient><linearGradient id="fluentColorArrowTrendingLines241" x1="3.668" x2="22.349" y1="14" y2="1.536" gradientUnits="userSpaceOnUse"><stop stop-color="#22918B"/><stop offset="1" stop-color="#20AC9D"/></linearGradient></defs></g></svg>
+      Most Viewed
+    </div>
+    {% if sidebar.top_posts %}
+    <ul class="panel-list">
+      {% for p in sidebar.top_posts %}
+      <li><a href="{{ url_for('post_detail', post_id=p.id) }}" title="{{ p.title }}">{{ p.title }}</a>
+      <div class="panel-meta">&#128065; {{ p.views }}</div></li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="panel-empty">No posts yet.</p>{% endif %}
+  </div>
+</aside>

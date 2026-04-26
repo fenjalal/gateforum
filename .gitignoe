@@ -1,0 +1,75 @@
+# ── GateForum .gitignore ──────────────────────────────────────────────────
+
+# Environment & secrets — NEVER commit these
+.env
+.env.*
+instance/.secret_key
+accesskeyadmindd.txt
+
+# Database — contains user data
+instance/DNet.db
+instance/*.db
+instance/
+
+# User-uploaded content
+static/uploads/
+static/avatars/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+
+# Compiled / distribution
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+gunicorn.log
+access.log
+error.log
+
+# Archives / backups
+*.tar.gz
+*.zip
+*.bak
+*.backup
+instance_backup/
+uploads_backup/
+avatars_backup/
+ver.py
+migate.py
+
+# Tor
+tor_data/
+hidden_service/

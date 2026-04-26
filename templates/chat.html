@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Chat — GateForum{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
+
+<div class="page-grid"><div></div>
+<div class="form-wrap chat-wrap">
+  
+  <div class="form-title">
+    Chat
+    <span style="float:right">
+      <a href="{{ url_for('index') }}" class="btn btn-ghost btn-sm">Home</a>
+    </span>
+  </div>
+  
+  <div class="dash-row chat-userbar">
+    <div class="author-av chat-user-av">
+      {% if tok_row and tok_row.claimed_avatar %}
+      <img src="{{ url_for('static', filename='avatars/' ~ tok_row.claimed_avatar) }}" alt="">
+      {% else %}
+      {{ nickname[0]|upper }}
+      {% endif %}
+    </div>
+    <div class="dash-info">
+      <div class="dash-title chat-user-name">{{ nickname }}</div>
+      <div class="dash-meta">{% if is_token_user and tok_row and tok_row.verified %}Verified{% elif is_token_user %}My Account{% else %}Anonymous{% endif %}</div>
+    </div>
+    {% if not is_token_user %}
+    <div class="dash-acts">
+      <form method="POST" class="chat-nick-form">
+        <input type="hidden" name="action" value="set_nick">
+        <input type="text" name="nickname" placeholder="Name" maxlength="30" class="if-input chat-nick-input">
+        <button type="submit" class="btn btn-secondary btn-sm">Set</button>
+      </form>
+      <form method="POST">
+        <input type="hidden" name="action" value="new_nick">
+        <button type="submit" class="btn btn-ghost btn-sm">Rand</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  
+  {% if error %}<div class="alert-err">{{ error }}</div>{% endif %}
+  
+  <div class="chat-list">
+    {% if messages %}
+      {% for msg in messages %}
+      <div class="chat-item {% if msg.is_token %}chat-item--v{% endif %}">
+        <div class="chat-item-head">
+          <span class="chat-item-av {% if msg.is_token %}chat-item-av--v{% endif %}">
+            {% if msg.avatar %}
+            <img src="{{ url_for('static', filename='avatars/' ~ msg.avatar) }}" alt="">
+            {% else %}
+            {{ msg.nickname[0]|upper }}
+            {% endif %}
+          </span>
+          <span class="chat-item-name {% if msg.is_token %}chat-item-name--v{% endif %}">{{ msg.nickname }}</span>
+          {% if msg.tok_verified %}
+          <span class="verified verified--gold" title="Verified" style="flex-shrink:0;line-height:1">
+            <svg width="11" height="11" viewBox="0 0 24 24"><path fill="currentColor" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/></svg>
+          </span>
+          {% endif %}
+          <span class="chat-item-time">{{ msg.created_at[11:16] }}</span>
+          {% if msg.reply_to_nick %}
+          <span class="chat-item-replyto">to <strong>{{ msg.reply_to_nick }}</strong></span>
+          {% endif %}
+          <form method="GET" action="{{ url_for('chat_page') }}" class="chat-reply-form" style="margin-left:auto">
+            <input type="hidden" name="reply" value="{{ msg.id }}">
+            <button type="submit" class="chat-item-rbtn">Reply</button>
+          </form>
+        </div>
+        {% if msg.image %}
+        <div class="chat-item-img"><img src="{{ url_for('chat_img', msg_id=msg.id) }}" alt=""></div>
+        {% endif %}
+        <div class="chat-item-text">{{ msg.message }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">No messages yet</div>
+    {% endif %}
+  </div>
+  
+  <div class="chat-compose">
+    {% if reply_msg %}
+    <div class="chat-replying">
+      <span>Reply to <strong>{{ reply_msg.nickname }}</strong>: {{ reply_msg.message[:40] }}{% if reply_msg.message|length > 40 %}...{% endif %}</span>
+      <a href="{{ url_for('chat_page') }}">Cancel</a>
+    </div>
+    {% endif %}
+    
+    <form method="POST" {% if is_token_user %}enctype="multipart/form-data"{% endif %}>
+      <input type="hidden" name="action" value="send">
+      <input type="hidden" name="reply_to" value="{{ reply_msg.id if reply_msg else '' }}">
+      <textarea name="message" placeholder="Type message..." maxlength="1000" rows="3" class="chat-textarea" required></textarea>
+      {% if is_token_user %}
+      <div class="chat-file-row">
+        <label class="chk-label"><span>Image:</span> <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" class="if-file"></label>
+      </div>
+      {% endif %}
+      <button type="submit" class="btn btn-primary btn-sm">SEND</button>
+    </form>
+  </div>
+  
+  <div class="chat-footer-text">
+    Messages disappear after reply{% if not is_token_user %} · <a href="{{ url_for('token_login') }}">Get verified</a> for images{% endif %}
+  </div>
+  
+</div>
+<div></div></div>
+{% endblock %}

@@ -1,0 +1,49 @@
+/* Local fonts only. Zero clearnet requests. */
+
+/* ── Poppins — display / logo / headings ─ */
+@font-face {
+  font-family: "Poppins";
+  src: url("../fonts/Poppins-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("../fonts/Poppins-Bold.ttf") format("truetype");
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Lora — body / article text (variable, supports wght axis) ── */
+@font-face {
+  font-family: "Lora";
+  src: url("../fonts/Lora-Variable.ttf") format("truetype");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Lora";
+  src: url("../fonts/Lora-Italic-Variable.ttf") format("truetype");
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* ── DejaVu Sans Mono — code / UI labels ─────────────────────── */
+@font-face {
+  font-family: "DejaVuMono";
+  src: url("../fonts/DejaVuSansMono.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "DejaVuMono";
+  src: url("../fonts/DejaVuSansMono-Bold.ttf") format("truetype");
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+}

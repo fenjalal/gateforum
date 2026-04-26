@@ -1,0 +1,31 @@
+{# Like widget — requires: post, liked, cq, ctok, like_err, like_post_id #}
+{% set already = post.id in liked %}
+{% set show_err = like_err and like_post_id == post.id %}
+<div class="like-widget">
+{% if already %}
+  <div class="like-already">
+    <svg viewBox="0 0 16 16" fill="var(--red)" width="13" height="13"><path d="M8 13.7l-1-.9C3 9.2 1 7.5 1 5.3A3.6 3.6 0 0 1 4.6 1.7c1.1 0 2.2.5 3 1.3A4 4 0 0 1 11.4 1.7 3.6 3.6 0 0 1 15 5.3C15 7.5 13 9.2 9 12.8l-1 .9z"/></svg>
+    Liked &nbsp;<span class="like-count">{{ post.likes }}</span>
+  </div>
+{% else %}
+  <form class="like-form" method="POST" action="{{ url_for('like_post', post_id=post.id) }}">
+    <input type="hidden" name="cap_tok" value="{{ ctok }}">
+    <div class="like-top">
+      <button type="submit" class="btn-like">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="12" height="12"><path d="M8 13.7l-1-.9C3 9.2 1 7.5 1 5.3A3.6 3.6 0 0 1 4.6 1.7c1.1 0 2.2.5 3 1.3A4 4 0 0 1 11.4 1.7 3.6 3.6 0 0 1 15 5.3C15 7.5 13 9.2 9 12.8l-1 .9z"/></svg>
+        Like
+      </button>
+      <span class="like-count">{{ post.likes }}</span>
+    </div>
+    <div class="captcha-row">
+      <span class="captcha-q">{{ cq }} =</span>
+      <input class="captcha-ans" type="text" name="cap_ans"
+             inputmode="numeric" maxlength="4" required autocomplete="off" placeholder="?">
+      <button type="submit" class="captcha-go">&#10003;</button>
+    </div>
+    {% if show_err %}
+    <div class="like-err">&#9888; Wrong answer — try again.</div>
+    {% endif %}
+  </form>
+{% endif %}
+</div>

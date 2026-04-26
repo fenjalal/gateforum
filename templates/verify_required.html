@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Verified Badge Required — GateForum{% endblock %}
+{% block content %}
+<div class="page-grid"><div></div>
+<div class="form-wrap" style="max-width:520px">
+
+  <div class="form-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
+    <span>Verified Badge Required</span>
+    <a href="{{ url_for('contributor_dashboard') }}" class="btn btn-ghost btn-sm">← Back</a>
+  </div>
+
+  <div class="vr-hero">
+    <div class="vr-icon"><svg width="28" height="28" viewBox="0 0 24 24"><path fill="#000" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/></svg></div>
+    <div class="vr-badge-label">VERIFIED</div>
+  </div>
+
+  <p class="vr-desc">
+    To publish posts on GateForum you need a <strong>Verified</strong> badge.
+    This is a one-time payment of <span class="vr-price">{{ verify_amount }} FIRO</span>
+    that confirms your account and grants you posting rights.
+  </p>
+
+  <div class="vr-info">
+    <div class="vr-info-row"><span class="vr-info-label">Price</span><span class="vr-info-val">{{ verify_amount }} FIRO</span></div>
+    <div class="vr-info-row"><span class="vr-info-label">Network</span><span class="vr-info-val">Firo (FIRO)</span></div>
+    <div class="vr-info-row"><span class="vr-info-label">Method</span><span class="vr-info-val">GateForum (privacy-preserving)</span></div>
+    <div class="vr-info-row"><span class="vr-info-label">Result</span><span class="vr-info-val">Permanent ✓ badge on your profile &amp; posts</span></div>
+    <div class="vr-info-row"><span class="vr-info-label">Session</span><span class="vr-info-val">{{ tok_row.claimed_name or tok_row.label }}</span></div>
+  </div>
+
+  <div class="vr-steps">
+    <div class="vr-step"><span class="vr-step-n">1</span><span>Click <em>Pay to Verify</em> below</span></div>
+    <div class="vr-step"><span class="vr-step-n">2</span><span>Send <strong>{{ verify_amount }} FIRO</strong> to the generated address</span></div>
+    <div class="vr-step"><span class="vr-step-n">3</span><span>Your badge is granted automatically after confirmation</span></div>
+    <div class="vr-step"><span class="vr-step-n">4</span><span>Return here and start publishing</span></div>
+  </div>
+
+  <form method="POST" action="{{ url_for('firo_pay') }}" style="margin-top:1.5rem">
+    <button type="submit" class="btn btn-primary" style="width:100%;font-size:.95rem;padding:.75rem 0">
+      &#9632;&nbsp; Pay {{ verify_amount }} FIRO to Get Verified
+    </button>
+  </form>
+
+  <p class="vr-note">
+    Payment is processed by GateForum. Supports Tor &amp; clearnet.
+    Your badge persists across sessions — you only pay once.
+  </p>
+
+</div>
+<div></div></div>
+
+<style>
+.vr-hero{text-align:center;padding:1.5rem 0 .8rem;display:flex;flex-direction:column;align-items:center;gap:.4rem}
+.vr-icon{width:56px;height:56px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#000;font-weight:900;line-height:1}
+.vr-badge-label{font-family:var(--mono);font-size:.6rem;letter-spacing:.2em;color:var(--accent);text-transform:uppercase}
+.vr-desc{font-size:.85rem;color:var(--text-dim);line-height:1.65;margin:0 0 1.2rem;text-align:center}
+.vr-price{color:var(--accent);font-weight:700;font-family:var(--mono)}
+.vr-info{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:1.2rem}
+.vr-info-row{display:flex;justify-content:space-between;align-items:center;padding:.55rem .9rem;border-bottom:1px solid var(--border);font-size:.75rem}
+.vr-info-row:last-child{border-bottom:none}
+.vr-info-label{color:var(--text-dim);font-family:var(--mono);font-size:.65rem;text-transform:uppercase;letter-spacing:.08em}
+.vr-info-val{color:var(--text-head);font-weight:600}
+.vr-steps{display:flex;flex-direction:column;gap:.6rem;margin-bottom:1rem}
+.vr-step{display:flex;align-items:flex-start;gap:.75rem;font-size:.8rem;color:var(--text-dim)}
+.vr-step-n{flex-shrink:0;width:22px;height:22px;border-radius:50%;background:var(--bg4);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:.65rem;color:var(--accent);font-weight:700}
+.vr-note{font-family:var(--mono);font-size:.58rem;color:var(--text-dim);margin-top:1rem;text-align:center;line-height:1.6}
+</style>
+{% endblock %}

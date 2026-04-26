@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}My Profile — GateForum{% endblock %}
+{% block content %}
+
+{# ── Single verified SVG macro — used once only ── #}
+{% macro verified_svg(size=16) %}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" title="Verified" aria-label="Verified">
+  <path fill="#e2c246" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/>
+</svg>
+{% endmacro %}
+
+<div class="page-grid"><div></div>
+<div class="form-wrap profile-wrap">
+
+  <div class="profile-header">
+    <a href="{{ url_for('contributor_dashboard') }}" class="btn btn-ghost btn-sm profile-back">← Back</a>
+    <h2 class="profile-title">My Profile</h2>
+  </div>
+
+  {% if error %}<div class="alert-err">{{ error }}</div>{% endif %}
+  {% if success %}<div class="alert-ok">{{ success }}</div>{% endif %}
+
+  {{- '' -}}
+  {# ── Identity card ── #}
+  <div class="profile-card">
+    <div class="profile-avatar">
+      {% if tok_row.claimed_avatar %}
+        <img src="{{ url_for('static', filename='avatars/' ~ tok_row.claimed_avatar) }}" alt="Avatar">
+      {% else %}
+        <span>{{ (tok_row.claimed_name or tok_row.label)[0] | upper }}</span>
+      {% endif %}
+    </div>
+    <div class="profile-info">
+      <div class="profile-name">
+        {{ tok_row.claimed_name or tok_row.label }}
+        {% if tok_row.verified %}{{ verified_svg(16) | safe }}{% endif %}
+      </div>
+      <div class="profile-role">
+        Contributor
+        {% if tok_row.verified %}
+          <span class="profile-verified-text">· Verified</span>
+        {% else %}
+          <span class="profile-unverified-text">· Not verified</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {{- '' -}}
+  {# ── Verify CTA — only if not verified ── #}
+  {% if not tok_row.verified %}
+  <div class="verify-cta">
+    <div class="verify-cta-left">
+      {{ verified_svg(18) | safe }}
+      <div>
+        <div class="verify-cta-title">Get Verified Badge</div>
+        <div class="verify-cta-sub">One-time payment of <strong>{{ verify_amount }} FIRO</strong> · Unlocks posting rights</div>
+      </div>
+    </div>
+    <form method="POST" action="{{ url_for('firo_pay') }}">
+      <button type="submit" class="btn btn-primary btn-sm">Pay {{ verify_amount }} FIRO</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {{- '' -}}
+  {# ── Avatar upload form ── #}
+  <div class="profile-section-title">Profile Image</div>
+  <form method="POST" enctype="multipart/form-data" class="profile-form">
+    <div class="fg">
+      <input type="file" name="avatar" accept="image/png,image/jpeg,image/gif,image/webp" class="file-input">
+      <div class="file-hint">PNG · JPG · GIF · WEBP — appears next to your name on posts</div>
+    </div>
+    <div class="profile-actions">
+      <button type="submit" class="btn btn-primary">Save Changes</button>
+      {% if tok_row.claimed_avatar %}
+      <a href="{{ url_for('contributor_remove_avatar') }}"
+         onclick="return confirm('Remove your avatar?')"
+         class="btn btn-secondary"
+         style="text-decoration:none">Remove Avatar</a>
+      {% endif %}
+    </div>
+  </form>
+
+</div>
+<div></div></div>
+
+<style>
+/* ── Profile layout ─────────────────────────────────────── */
+.profile-wrap{max-width:460px}
+
+.profile-header{display:flex;align-items:center;gap:.75rem;margin-bottom:1.2rem;flex-wrap:wrap}
+.profile-title{font-size:1rem;font-weight:700;color:var(--text-head);margin:0}
+.profile-back{margin-left:auto}
+
+/* ── Identity card ─────────────────────────────────────── */
+.profile-card{
+  display:flex;align-items:center;gap:1rem;
+  padding:.9rem 1rem;
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  margin-bottom:1rem;
+}
+.profile-avatar{
+  width:56px;height:56px;border-radius:50%;overflow:hidden;
+  background:var(--bg4);border:2px solid var(--border);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.profile-avatar img{width:100%;height:100%;object-fit:cover}
+.profile-avatar span{font-family:var(--mono);font-size:1.4rem;font-weight:700;color:var(--accent)}
+
+.profile-info{display:flex;flex-direction:column;gap:.2rem;min-width:0}
+.profile-name{
+  display:flex;align-items:center;gap:.35rem;
+  font-size:1rem;font-weight:700;color:var(--text-head);
+  flex-wrap:wrap;
+}
+.profile-role{font-family:var(--mono);font-size:.6rem;color:var(--text-dim)}
+.profile-verified-text{color:var(--green)}
+.profile-unverified-text{color:var(--text-dim)}
+
+/* ── Verify CTA ────────────────────────────────────────── */
+.verify-cta{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:.75rem;flex-wrap:wrap;
+  background:rgba(226,194,70,.06);
+  border:1px solid rgba(226,194,70,.4);
+  border-radius:var(--r);
+  padding:.75rem 1rem;
+  margin-bottom:1.1rem;
+}
+.verify-cta-left{display:flex;align-items:center;gap:.6rem}
+.verify-cta-title{font-weight:700;font-size:.8rem;color:var(--text-head);margin-bottom:.1rem}
+.verify-cta-sub{font-family:var(--mono);font-size:.58rem;color:var(--text-dim)}
+
+/* ── Form ──────────────────────────────────────────────── */
+.profile-section-title{
+  font-family:var(--mono);font-size:.6rem;text-transform:uppercase;
+  letter-spacing:.12em;color:var(--text-dim);margin-bottom:.5rem;
+}
+.profile-form{display:flex;flex-direction:column;gap:.75rem}
+.profile-actions{display:flex;gap:.5rem;flex-wrap:wrap}
+
+.file-input{
+  background:var(--bg3);border:1px solid var(--border);
+  color:var(--text);font-family:var(--mono);font-size:.75rem;
+  padding:.45rem;border-radius:var(--r);width:100%;box-sizing:border-box;
+}
+.file-input::file-selector-button{
+  background:var(--accent);color:#000;border:none;
+  padding:.3rem .65rem;border-radius:var(--r);
+  font-family:var(--mono);font-size:.68rem;cursor:pointer;margin-right:.6rem;
+}
+.file-hint{font-family:var(--mono);font-size:.55rem;color:var(--text-dim);margin-top:.25rem}
+
+/* ── Alerts ─────────────────────────────────────────────── */
+.alert-err{
+  background:rgba(235,87,87,.1);border:1px solid #eb5757;
+  color:#eb5757;font-family:var(--mono);font-size:.75rem;
+  padding:.6rem .8rem;border-radius:var(--r);margin-bottom:.9rem;
+}
+.alert-ok{
+  background:rgba(39,174,96,.1);border:1px solid var(--green);
+  color:#6fcf97;font-family:var(--mono);font-size:.75rem;
+  padding:.6rem .8rem;border-radius:var(--r);margin-bottom:.9rem;
+}
+</style>
+{% endblock %}

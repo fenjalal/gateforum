@@ -1,0 +1,20 @@
+# ============================================================
+# torrc — DNet hidden service configuration snippet
+# Add these lines to your /etc/tor/torrc
+# ============================================================
+
+# Hidden service directory and port mapping
+# Port 80 on the .onion address → port 5000 on localhost (Flask)
+HiddenServiceDir /var/lib/tor/DNet_hidden_service/
+HiddenServicePort 80 127.0.0.1:5000
+
+# Optional: version 3 address (default in modern Tor)
+# HiddenServiceVersion 3
+
+# ============================================================
+# After editing torrc, restart Tor:
+#   sudo systemctl restart tor
+#
+# Then read your .onion address:
+#   sudo cat /var/lib/tor/DNet_hidden_service/hostname
+# ============================================================

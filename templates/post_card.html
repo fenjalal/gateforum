@@ -1,0 +1,32 @@
+<article class="post-card {% if post.pinned %}post-card--pinned{% endif %}">
+
+  {# ── Images: show max 1 in card, hint if more exist ── #}
+  {% if imgs %}
+  <div class="post-card-img-wrap">
+    <img src="{{ url_for('static', filename='uploads/' ~ imgs[0]) }}"
+         alt="" loading="lazy" decoding="async" class="post-card-img">
+    {% if imgs|length > 1 %}
+    <span class="post-img-count">+{{ imgs|length - 1 }}</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="post-card-body">
+    {% include '_byline.html' %}
+    <div class="post-meta">
+      {{ post.created[:10] }} &bull; {{ rt }} min read &bull; &#128065; {{ post.views }}
+    </div>
+    <h2 class="post-title">
+      <a href="{{ url_for('post_detail', post_id=post.id) }}">{{ post.title }}</a>
+    </h2>
+    {# Excerpt: max 120 chars, no markdown symbols #}
+    {% set excerpt = post.body | strip_md %}
+    {% if excerpt | length > 120 %}
+    <div class="post-excerpt">{{ excerpt[:120] | trim }}…</div>
+    {% elif excerpt %}
+    <div class="post-excerpt">{{ excerpt }}</div>
+    {% endif %}
+    <a href="{{ url_for('post_detail', post_id=post.id) }}" class="read-more">Read more &rarr;</a>
+  </div>
+
+</article>

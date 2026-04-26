@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Search{% if q %}: {{ q }}{% endif %} — GateForum{% endblock %}
+{% block content %}
+<div class="page-grid">
+  {% include '_sidebar_left.html' %}
+  <section class="feed">
+    <form class="search-form" method="GET" action="{{ url_for('search') }}">
+      <input type="text" name="q" value="{{ q }}" placeholder="Search posts…"
+             maxlength="200" autocomplete="off" class="search-inp" autofocus>
+      <button type="submit" class="btn btn-primary btn-sm">Search</button>
+    </form>
+    {% if q %}
+    <div class="feed-hdr">{{ results|length }} result{% if results|length != 1 %}s{% endif %} for &ldquo;{{ q }}&rdquo;</div>
+    {% if results %}
+      {% for item in results %}{% set post=item.post %}{% set imgs=item.imgs %}{% set author_row=item.author_row %}{% set rt=item.rt %}{% set tok_verified=item.tok_verified %}{% set tok_avatar=item.tok_avatar %}
+      {% include '_post_card.html' %}{% endfor %}
+    {% else %}<div class="empty">No results found.</div>{% endif %}
+    {% else %}<div class="empty">Enter a search term above.</div>{% endif %}
+  </section>
+  {% include '_sidebar_right.html' %}
+</div>
+{% endblock %}

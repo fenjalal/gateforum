@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — GateForum{% endblock %}
+{% block content %}
+
+{% macro verified_svg() %}
+<svg width="14" height="14" viewBox="0 0 24 24" title="Verified" aria-label="Verified" style="vertical-align:middle;flex-shrink:0">
+  <path fill="#e2c246" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/>
+</svg>
+{% endmacro %}
+
+<div class="page-grid"><div></div>
+<div class="form-wrap dash-wrap">
+
+  {{- '' -}}
+  {# ── Top bar ── #}
+  <div class="dash-topbar">
+    <div class="dash-identity">
+      <span class="dash-username">
+        {{ tok_row.claimed_name or tok_row.label }}
+        {% if tok_row.verified %}{{ verified_svg() | safe }}{% endif %}
+      </span>
+      <span class="dash-status">&#9679; Online</span>
+    </div>
+    <div class="dash-nav">
+      <a href="{{ url_for('index') }}" class="btn btn-ghost btn-sm">Home</a>
+      <a href="{{ url_for('contributor_profile') }}" class="btn btn-ghost btn-sm">Profile</a>
+      {% if tok_row.verified %}
+        <a href="{{ url_for('new_post') }}" class="btn btn-primary btn-sm">+ New Post</a>
+      {% endif %}
+      <a href="{{ url_for('token_logout') }}" class="btn btn-secondary btn-sm">Logout</a>
+    </div>
+  </div>
+
+  {{- '' -}}
+  {# ── Verify CTA — only if not verified ── #}
+  {% if not tok_row.verified %}
+  <div class="verify-cta">
+    <div class="verify-cta-left">
+      <div class="verify-cta-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24"><path fill="#000" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/></svg>
+      </div>
+      <div>
+        <div class="verify-cta-title">Get Verified to Post</div>
+        <div class="verify-cta-sub">One-time · <strong>{{ verify_amount }} FIRO</strong> · Permanent badge + posting rights</div>
+      </div>
+    </div>
+    <form method="POST" action="{{ url_for('firo_pay') }}">
+      <button type="submit" class="btn btn-primary btn-sm">Pay {{ verify_amount }} FIRO</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {{- '' -}}
+  {# ── Posts list ── #}
+  <div class="dash-section-title">My Posts</div>
+
+  {% if posts %}
+    {% for item in posts %}{% set p=item.post %}{% set imgs=item.imgs %}
+    <div class="dash-row">
+      {% if imgs %}
+      <img src="{{ url_for('static', filename='uploads/' ~ imgs[0]) }}"
+           class="dash-thumb" alt="" loading="lazy">
+      {% endif %}
+      <div class="dash-info">
+        <div class="dash-title">{{ p.title }}</div>
+        <div class="dash-meta">
+          {{ p.created[:10] }}
+          {% if p.role %}&nbsp;·&nbsp;<span class="role-badge role-{{ p.role }}">{{ p.role }}</span>{% endif %}
+          &nbsp;·&nbsp;&#128065; {{ p.views }}
+        </div>
+      </div>
+      <div class="dash-acts">
+        <a href="{{ url_for('post_detail', post_id=p.id) }}" class="btn btn-secondary btn-sm">View</a>
+        <form method="POST" action="{{ url_for('contributor_delete', post_id=p.id) }}"
+              onsubmit="return confirm('Delete this post permanently?')">
+          <button class="btn btn-danger btn-sm">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="dash-empty">
+    No posts yet.
+    {% if tok_row.verified %}
+      <a href="{{ url_for('new_post') }}">Write your first post →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+<div></div></div>
+
+<style>
+/* ── Dashboard layout ──────────────────────────────────── */
+.dash-wrap{max-width:700px}
+
+/* ── Top bar ───────────────────────────────────────────── */
+.dash-topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:.75rem;
+  padding-bottom:.9rem;
+  border-bottom:1px solid var(--border);
+  margin-bottom:1rem;
+}
+.dash-identity{display:flex;flex-direction:column;gap:.2rem}
+.dash-username{
+  display:flex;align-items:center;gap:.35rem;
+  font-size:1rem;font-weight:700;color:var(--text-head);
+}
+.dash-status{font-family:var(--mono);font-size:.58rem;color:var(--green)}
+.dash-nav{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
+
+/* ── Verify CTA ────────────────────────────────────────── */
+.verify-cta{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:.75rem;flex-wrap:wrap;
+  background:rgba(226,194,70,.06);
+  border:1px solid rgba(226,194,70,.4);
+  border-radius:var(--r);
+  padding:.75rem 1rem;
+  margin-bottom:1rem;
+}
+.verify-cta-left{display:flex;align-items:center;gap:.7rem}
+.verify-cta-icon{
+  width:34px;height:34px;border-radius:50%;
+  background:#e2c246;display:flex;align-items:center;
+  justify-content:center;flex-shrink:0;
+}
+.verify-cta-title{font-weight:700;font-size:.82rem;color:var(--text-head);margin-bottom:.1rem}
+.verify-cta-sub{font-family:var(--mono);font-size:.58rem;color:var(--text-dim)}
+
+/* ── Section title ─────────────────────────────────────── */
+.dash-section-title{
+  font-family:var(--mono);font-size:.58rem;text-transform:uppercase;
+  letter-spacing:.12em;color:var(--text-dim);margin-bottom:.6rem;
+}
+
+/* ── Post rows ─────────────────────────────────────────── */
+.dash-row{
+  display:flex;align-items:center;gap:.8rem;
+  padding:.65rem 0;border-bottom:1px solid var(--border);
+}
+.dash-row:last-child{border-bottom:none}
+.dash-thumb{width:52px;height:52px;object-fit:cover;border-radius:4px;flex-shrink:0}
+.dash-info{flex:1;min-width:0}
+.dash-title{font-weight:600;font-size:.85rem;color:var(--text-head);
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:.2rem}
+.dash-meta{font-family:var(--mono);font-size:.58rem;color:var(--text-dim);display:flex;align-items:center;flex-wrap:wrap;gap:.2rem}
+.dash-acts{display:flex;gap:.35rem;flex-shrink:0}
+.dash-empty{font-family:var(--mono);font-size:.8rem;color:var(--text-dim);padding:1.5rem 0;text-align:center}
+.dash-empty a{color:var(--accent)}
+</style>
+{% endblock %}

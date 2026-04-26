@@ -1,0 +1,16 @@
+<article class="post-card {% if post.pinned %}post-card--pinned{% endif %}">
+  {% if imgs %}
+  <div class="post-imgs {% if imgs|length > 1 %}post-imgs--grid{% endif %}">
+    {% for img in imgs %}
+    <img src="{{ url_for('static', filename='uploads/' ~ img) }}" alt="" loading="lazy" decoding="async" class="post-img">
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div class="post-card-body">
+    {% include '_byline.html' %}
+    <div class="post-meta">{{ post.created[:16] }} &bull; {{ rt }} min read &bull; &#128065; {{ post.views }}</div>
+    <h2 class="post-title"><a href="{{ url_for('post_detail', post_id=post.id) }}">{{ post.title }}</a></h2>
+    <div class="post-excerpt">{{ post.body | strip_md | truncate(280, True, '…') }}</div>
+    <a href="{{ url_for('post_detail', post_id=post.id) }}" class="read-more">Read more &rarr;</a>
+  </div>
+</article>

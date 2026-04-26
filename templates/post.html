@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ post.title }} — GateForum{% endblock %}
+{% block content %}
+<div class="page-grid">
+  {% include '_sidebar_left.html' %}
+  <article class="post-detail">
+    <a href="{{ url_for('index') }}" class="back-link">&larr; Back</a>
+    {% if imgs %}
+    <div class="post-imgs {% if imgs|length > 1 %}post-imgs--grid{% endif %} post-imgs--detail">
+      {% for img in imgs %}
+      <img src="{{ url_for('static', filename='uploads/' ~ img) }}" alt="" loading="lazy" decoding="async" class="post-img">
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="post-meta">{{ post.created[:16] }} UTC &bull; {{ rt }} min read &bull; &#128065; {{ post.views }} views</div>
+    <h1 class="detail-title">{{ post.title }}</h1>
+    {% include '_byline.html' %}
+    <hr class="post-hr">
+    <div class="post-body">{{ post.body | md }}</div>
+  </article>
+  {% include '_sidebar_right.html' %}
+</div>
+{% endblock %}

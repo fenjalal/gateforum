@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard — GateForum{% endblock %}
+{% block content %}
+<div class="page-grid"><div></div>
+<div class="form-wrap" style="max-width:800px">
+
+  {% if new_token %}
+  <div class="token-reveal">
+    <strong>&#9888; Token for "{{ new_token_label }}" — copy now, shown only once:</strong><br>
+    <code style="word-break:break-all;font-size:.8rem">{{ new_token }}</code>
+  </div>
+  {% endif %}
+
+  {% if bulk_created %}
+  <div class="token-reveal" style="border-color:var(--teal);background:rgba(22,160,133,.07)">
+    <strong style="color:var(--teal)">&#10003; {{ bulk_created }} pool tokens created</strong>
+    &nbsp;&mdash;&nbsp;
+    <span style="font-family:var(--mono);font-size:.72rem;color:var(--text-dim)">batch: {{ bulk_batch }}</span><br>
+    <span style="font-family:var(--mono);font-size:.6rem;color:var(--text-dim)">
+      Users can now claim them from <strong>/token-access</strong>.
+      Labels follow the pattern <em>Prefix-{{ bulk_batch }}-01</em> … <em>-{{ "%02d"|format(bulk_created) }}</em>.
+    </span>
+  </div>
+  {% endif %}
+
+  <div class="form-title">Admin Dashboard
+    <span style="float:right;display:flex;gap:.4rem">
+      <a href="{{ url_for('new_post') }}" class="btn btn-primary btn-sm">+ Post</a>
+      <a href="{{ url_for('admin_logout') }}" class="btn btn-ghost btn-sm">Logout</a>
+    </span>
+  </div>
+
+  {# ── STATS BAR ── #}
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin-bottom:1.4rem">
+    {% for label, val, color in [
+      ('Posts', stats.posts, 'var(--accent)'),
+      ('Views', stats.views, 'var(--blue)'),
+      ('Contrib Posts', stats.contrib, 'var(--green)'),
+      ('Active Tokens', stats.active_toks, 'var(--teal)')
+    ] %}
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:.6rem .8rem;text-align:center">
+      <div style="font-family:var(--mono);font-size:1.2rem;font-weight:900;color:{{ color }}">{{ val }}</div>
+      <div style="font-family:var(--mono);font-size:.55rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.12em">{{ label }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── SITE SETTINGS ── #}
+  <details style="margin-bottom:1.4rem">
+    <summary style="font-family:var(--mono);font-size:.62rem;font-weight:900;text-transform:uppercase;letter-spacing:.15em;color:var(--text-dim);cursor:pointer;padding:.4rem 0;border-bottom:2px solid var(--border)">
+      &#9881; Site Settings
+    </summary>
+    <form method="POST" action="{{ url_for('admin_settings') }}" style="padding:.8rem 0 0" autocomplete="off">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-bottom:.7rem">
+        <div class="fg" style="margin:0">
+          <label>Site Title</label>
+          <input type="text" name="site_title" value="{{ site_title }}" maxlength="60">
+        </div>
+        <div class="fg" style="margin:0">
+          <label>Tagline</label>
+          <input type="text" name="site_tagline" value="{{ site_tagline }}" maxlength="120">
+        </div>
+      </div>
+      <div style="display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap;margin-bottom:.7rem">
+        <div class="fg" style="margin:0;min-width:120px">
+          <label>Posts per page</label>
+          <select name="posts_per_page">
+            {% for n in [5,10,15,20,25] %}
+            <option value="{{ n }}" {% if ppp|int == n %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <label class="chk-label" style="margin-top:1rem">
+          <input type="checkbox" name="maintenance" {% if maintenance=='1' %}checked{% endif %}> Maintenance Mode
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Save Settings</button>
+    </form>
+  </details>
+
+  {# ── AUTHORS ── #}
+  <div class="section-lbl">Author Profiles ({{ authors|length }})</div>
+  <form method="POST" action="{{ url_for('author_create') }}" enctype="multipart/form-data" class="inline-form" autocomplete="off">
+    <input type="text" name="name" placeholder="Name *" maxlength="80" required class="if-input" style="flex:1;min-width:120px">
+    <input type="file" name="avatar" accept=".png,.jpg,.jpeg,.gif,.webp" class="if-file">
+    <select name="role_badge" class="if-input" style="min-width:110px">
+      <option value="">— No Badge —</option>
+      {% for r in all_roles %}
+      <option value="{{ r }}">{{ r }}</option>
+      {% endfor %}
+    </select>
+    <label class="chk-label"><input type="checkbox" name="verified"> Verified</label>
+    <button type="submit" class="btn btn-primary btn-sm">Add</button>
+  </form>
+  {% for a in authors %}
+  <div class="dash-row">
+    <div class="author-av">
+      {% if a.avatar %}<img src="{{ url_for('static', filename='avatars/' ~ a.avatar) }}" alt="{{ a.name }}">
+      {% else %}{{ a.name[0]|upper }}{% endif %}
+    </div>
+    <div class="dash-info">
+      <div class="dash-title">
+        {{ a.name }}
+        {% if a.verified %}<svg width="12" height="12" viewBox="0 0 24 24" style="vertical-align:middle"><path fill="#e2c246" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/></svg>{% endif %}
+        {% if a.role_badge %}<span class="role-badge role-{{ a.role_badge }}">{{ a.role_badge }}</span>{% endif %}
+      </div>
+      <form method="POST" action="{{ url_for('author_edit', aid=a.id) }}" enctype="multipart/form-data" class="inline-form" style="margin-top:.4rem" autocomplete="off">
+        <input type="text" name="name" value="{{ a.name }}" maxlength="80" class="if-input" style="flex:1;min-width:100px">
+        <input type="file" name="avatar" accept=".png,.jpg,.jpeg,.gif,.webp" class="if-file">
+        <select name="role_badge" class="if-input" style="min-width:100px">
+          <option value="">— No Badge —</option>
+          {% for r in all_roles %}
+          <option value="{{ r }}" {% if r == a.role_badge %}selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select>
+        <label class="chk-label"><input type="checkbox" name="verified" {% if a.verified %}checked{% endif %}> Verified</label>
+        <button type="submit" class="btn btn-secondary btn-sm">Save</button>
+      </form>
+    </div>
+    <form method="POST" action="{{ url_for('author_delete', aid=a.id) }}" onsubmit="return confirm('Delete author?')">
+      <button class="btn btn-danger btn-sm">Del</button>
+    </form>
+  </div>
+  {% else %}<div class="empty">No authors yet.</div>{% endfor %}
+
+  {# ── POSTS ── #}
+  <div class="section-lbl" style="margin-top:1.6rem">
+    Posts ({{ posts|length }})
+    <span style="float:right;display:flex;gap:.4rem;font-weight:400">
+      <form method="GET" action="{{ url_for('admin_dashboard') }}" style="display:flex;gap:.35rem;align-items:center">
+        <input type="text" name="q" value="{{ q }}" placeholder="Search posts…" class="if-input" style="width:140px;font-size:.62rem;padding:.2rem .45rem">
+        <select name="f" class="if-input" style="font-size:.62rem;padding:.2rem .35rem">
+          <option value="all" {% if filt=='all' %}selected{% endif %}>All</option>
+          <option value="pinned" {% if filt=='pinned' %}selected{% endif %}>Pinned</option>
+          <option value="contributor" {% if filt=='contributor' %}selected{% endif %}>Contributor</option>
+        </select>
+        <button type="submit" class="btn btn-secondary btn-sm">Go</button>
+        {% if q or filt!='all' %}<a href="{{ url_for('admin_dashboard') }}" class="btn btn-ghost btn-sm">✕ Clear</a>{% endif %}
+      </form>
+    </span>
+  </div>
+  {% for p in posts %}
+  <div class="dash-row">
+    <div class="dash-info">
+      <div class="dash-title">{% if p.pinned %}&#9733; {% endif %}{{ p.title }}{% if p.edited %} <span style="font-family:var(--mono);font-size:.55rem;color:var(--text-dim)">[edited]</span>{% endif %}</div>
+      <div class="dash-meta">
+        {{ p.created[:16] }} &bull; {{ p.author }}
+        {% if p.role %}&bull; <span class="role-badge role-{{ p.role }}">{{ p.role }}</span>{% endif %}
+        &bull; &#128065; {{ p.views }}
+        {% if p.token_id %}&bull; <em>contributor</em>{% endif %}
+      </div>
+    </div>
+    <div class="dash-acts">
+      <a href="{{ url_for('post_detail', post_id=p.id) }}" class="btn btn-secondary btn-sm">View</a>
+      <a href="{{ url_for('admin_edit_post', post_id=p.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+      <form method="POST" action="{{ url_for('admin_pin', post_id=p.id) }}">
+        <button class="btn btn-sm {% if p.pinned %}btn-accent{% else %}btn-ghost{% endif %}">
+          {% if p.pinned %}Unpin{% else %}Pin{% endif %}
+        </button>
+      </form>
+      <form method="POST" action="{{ url_for('admin_delete', post_id=p.id) }}" onsubmit="return confirm('Delete this post?')">
+        <button class="btn btn-danger btn-sm">Del</button>
+      </form>
+    </div>
+  </div>
+  {% else %}<div class="empty">No posts found.</div>{% endfor %}
+
+  {# ── TOKENS ── #}
+  <div class="section-lbl" style="margin-top:1.6rem">Contributor Tokens</div>
+  <details open>
+    <summary style="font-family:var(--mono);font-size:.6rem;color:var(--text-dim);cursor:pointer;padding:.3rem 0;margin-bottom:.6rem">
+      Generate new token ▾
+    </summary>
+    <form method="POST" action="{{ url_for('token_create') }}" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:.75rem;margin-bottom:.8rem" autocomplete="off">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.6rem">
+        <div class="fg" style="margin:0">
+          <label>Label *</label>
+          <input type="text" name="label" placeholder="e.g. Reporter A" maxlength="80" required class="if-input" style="width:100%">
+        </div>
+        <div class="fg" style="margin:0">
+          <label>Note <span class="hint">(internal only)</span></label>
+          <input type="text" name="note" placeholder="optional note" maxlength="200" class="if-input" style="width:100%">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.6rem">
+        <div class="fg" style="margin:0">
+          <label>Author Profile <span class="hint">(assigned to this contributor)</span></label>
+          <select name="author_id" class="if-input" style="width:100%">
+            <option value="">— No Author —</option>
+            {% for a in authors %}
+            <option value="{{ a.id }}">{{ a.name }}{% if a.verified %} ✓{% endif %}{% if a.role_badge %} [{{ a.role_badge }}]{% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="fg" style="margin:0">
+          <label>Default Role Tag <span class="hint">(on their posts)</span></label>
+          <select name="default_role" class="if-input" style="width:100%">
+            <option value="">— No Role —</option>
+            {% for r in all_roles %}
+            <option value="{{ r }}">{{ r }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+        <button type="submit" class="btn btn-primary btn-sm">Generate Token</button>
+        <label class="chk-label">
+          <input type="checkbox" name="is_pool"> Add to Public Pool <span class="hint">(users can claim from /token-access)</span>
+        </label>
+      </div>
+    </form>
+  </details>
+
+  {# ── Bulk pool-token generation ── #}
+  <details style="margin-bottom:.8rem">
+    <summary style="font-family:var(--mono);font-size:.6rem;color:var(--text-dim);cursor:pointer;padding:.3rem 0;margin-bottom:.6rem">
+      Bulk generate pool tokens (10 / 25 / 50 / 100) ▾
+    </summary>
+    <form method="POST" action="{{ url_for('token_bulk_create') }}"
+          style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:.75rem"
+          autocomplete="off">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.6rem">
+        <div class="fg" style="margin:0">
+          <label>Count</label>
+          <select name="count" class="if-input" style="width:100%">
+            <option value="10">10 tokens</option>
+            <option value="25">25 tokens</option>
+            <option value="50">50 tokens</option>
+            <option value="100">100 tokens</option>
+          </select>
+        </div>
+        <div class="fg" style="margin:0">
+          <label>Label Prefix <span class="hint">(auto-numbered, optional)</span></label>
+          <input type="text" name="prefix" placeholder="e.g. Visitor" maxlength="20"
+                 class="if-input" style="width:100%">
+        </div>
+      </div>
+      <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+        <button type="submit" class="btn btn-primary btn-sm">Bulk Generate</button>
+        <span style="font-family:var(--mono);font-size:.52rem;color:var(--text-dim)">
+          All tokens go to the public pool — claimable at /token-access
+        </span>
+      </div>
+    </form>
+  </details>
+  {% for t in tokens %}
+  <div class="dash-row {% if t.revoked %}dash-row--dim{% endif %}">
+    <div class="dash-info">
+      <div class="dash-title">
+        {{ t.label }}
+        {% if t.verified %}<svg width="14" height="14" viewBox="0 0 24 24" style="vertical-align:middle;margin-left:.2rem"><path fill="#e2c246" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/></svg>{% endif %}
+        {% if t.revoked %}<span class="badge-rev">Revoked</span>
+        {% elif t.is_pool and t.claimed %}<span style="font-family:var(--mono);font-size:.52rem;color:var(--blue);border:1px solid var(--blue);padding:.05rem .28rem;border-radius:2px">Claimed</span>
+        {% elif t.is_pool %}<span style="font-family:var(--mono);font-size:.52rem;color:var(--teal);border:1px solid var(--teal);padding:.05rem .28rem;border-radius:2px">Pool</span>
+        {% else %}<span class="badge-act">Active</span>{% endif %}
+      </div>
+      <div class="dash-meta">
+        {{ t.created[:16] }}
+        {% if t.note %}&bull; {{ t.note }}{% endif %}
+        {% for a in authors %}{% if a.id == t.author_id %}&bull; Author: <strong style="color:var(--text-head)">{{ a.name }}</strong>{% endif %}{% endfor %}
+        {% if t.default_role %}&bull; Role: <span class="role-badge role-{{ t.default_role }}">{{ t.default_role }}</span>{% endif %}
+        {% if t.is_pool and t.claimed %}&bull; <span style="color:var(--blue)">Claimed: {{ t.claimed_at[:16] }}</span>{% if t.claimed_name %} as <strong style="color:var(--accent)">{{ t.claimed_name }}</strong>{% endif %}{% endif %}
+      </div>
+    </div>
+    <div class="dash-acts">
+      {% if not t.revoked %}
+      <form method="POST" action="{{ url_for('token_verify', tid=t.id) }}" style="display:inline">
+        <button class="btn btn-sm {% if t.verified %}btn-accent{% else %}btn-ghost{% endif %}" title="{% if t.verified %}Remove verified{% else %}Add verified{% endif %}">
+          <svg width="12" height="12" viewBox="0 0 24 24"><path fill="currentColor" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/></svg>
+        </button>
+      </form>
+      <form method="POST" action="{{ url_for('token_revoke', tid=t.id) }}" onsubmit="return confirm('Revoke this token?')">
+        <button class="btn btn-secondary btn-sm">Revoke</button>
+      </form>
+      {% endif %}
+      <form method="POST" action="{{ url_for('token_delete', tid=t.id) }}" onsubmit="return confirm('Delete permanently?')">
+        <button class="btn btn-danger btn-sm">Del</button>
+      </form>
+    </div>
+  </div>
+  {% else %}<div class="empty">No tokens yet.</div>{% endfor %}
+
+  {# ── ACTIVITY LOG ── #}
+  <details style="margin-top:1.6rem">
+    <summary style="font-family:var(--mono);font-size:.62rem;font-weight:900;text-transform:uppercase;letter-spacing:.15em;color:var(--text-dim);cursor:pointer;padding:.4rem 0;border-bottom:2px solid var(--border)">
+      &#128203; Recent Activity (last 20)
+    </summary>
+    <div style="padding:.6rem 0">
+      {% for entry in activity %}
+      <div style="display:flex;gap:.6rem;padding:.3rem 0;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:.6rem">
+        <span style="color:var(--text-dim);flex-shrink:0">{{ entry.ts[:16] }}</span>
+        <span style="color:var(--accent);flex-shrink:0">{{ entry.action }}</span>
+        <span style="color:var(--text-dim)">{{ entry.detail }}</span>
+      </div>
+      {% else %}
+      <div style="font-family:var(--mono);font-size:.62rem;color:var(--text-dim);padding:.4rem 0">No activity yet.</div>
+      {% endfor %}
+    </div>
+  </details>
+
+</div>
+<div></div></div>
+{% endblock %}
