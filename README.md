@@ -360,12 +360,15 @@ Please:
 Free to use, modify, and distribute. Attribution appreciated.
 
 ---
-
 <div align="center">
 
-**GateForum** — Open Source · freedom is key  
-[GateForum Site](https://muscular-zoom-showbiz.ngrok-free.dev)  
+**GateForum** — Open Source · Freedom is key  
+
+Check if the site is online (the server may be offline): [GateForum Site](https://muscular-zoom-showbiz.ngrok-free.dev)  
+
 *Built for privacy. Built for anonymity. Built to last.*
+
+<br>
 
 ![Screenshot 1](images/image1.png)  
 ![Screenshot 2](images/image2.png)
