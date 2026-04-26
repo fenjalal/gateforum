@@ -9,7 +9,7 @@ accesskeyadmindd.txt
 # Database — contains user data
 instance/DNet.db
 instance/*.db
-instance/
+instance/DNet.db
 instance
 # User-uploaded content
 static/uploads/
