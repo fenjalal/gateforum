@@ -12,8 +12,6 @@ Zero tracking. Zero ads. Zero external connections.
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](#license)
 [![Open Source](https://img.shields.io/badge/Open%20Source-%E2%9D%A4-red?style=flat-square)](#)
 
-> Created by **Fen & ai**
-
 </div>
 
 ---
@@ -373,4 +371,7 @@ Check if the site is online (the server may be offline): [GateForum Site](https:
 ![Screenshot 1](images/image1.png)  
 ![Screenshot 2](images/image2.png)
 
+
 </div>
+
+> Contributor fen & parood
