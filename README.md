@@ -9,7 +9,6 @@ Zero tracking. Zero ads. Zero external connections.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.0%2B-lightgrey?style=flat-square)](https://flask.palletsprojects.com)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](#license)
 [![Open Source](https://img.shields.io/badge/Open%20Source-%E2%9D%A4-red?style=flat-square)](#)
 
 </div>
