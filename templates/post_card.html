@@ -14,7 +14,7 @@
   <div class="post-card-body">
     {% include '_byline.html' %}
     <div class="post-meta">
-      {{ post.created[:10] }} &bull; {{ rt }} min read &bull; &#128065; {{ post.views }}
+      {{ post.created[:10] }} &bull; {{ rt }} min read &bull; {{ post.views }} views
     </div>
     <h2 class="post-title">
       <a href="{{ url_for('post_detail', post_id=post.id) }}">{{ post.title }}</a>

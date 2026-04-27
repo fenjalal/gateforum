@@ -31,19 +31,23 @@ db.execute("PRAGMA foreign_keys=ON")
 # ── 1. Add missing columns ─────────────────────────────────────────────────
 print("── Step 1: Column migrations ──")
 columns = [
-    ("tokens",        "verified",       "INTEGER NOT NULL DEFAULT 0"),
-    ("tokens",        "author_id",      "TEXT NOT NULL DEFAULT ''"),
-    ("tokens",        "default_role",   "TEXT NOT NULL DEFAULT ''"),
-    ("tokens",        "claimed_name",   "TEXT NOT NULL DEFAULT ''"),
-    ("tokens",        "claimed_avatar", "TEXT NOT NULL DEFAULT ''"),
-    ("authors",       "verified",       "INTEGER NOT NULL DEFAULT 0"),
-    ("authors",       "role_badge",     "TEXT NOT NULL DEFAULT ''"),
-    ("posts",         "token_id",       "TEXT NOT NULL DEFAULT ''"),
-    ("posts",         "author_id",      "TEXT NOT NULL DEFAULT ''"),
-    ("posts",         "edited",         "TEXT NOT NULL DEFAULT ''"),
-    ("chat",          "reply_to_nick",  "TEXT NOT NULL DEFAULT ''"),
-    ("firo_payments", "confirmed_at",   "TEXT NOT NULL DEFAULT ''"),
-    ("settings",      "updated",        "TEXT NOT NULL DEFAULT ''"),
+    ("tokens",        "verified",        "INTEGER NOT NULL DEFAULT 0"),
+    ("tokens",        "author_id",       "TEXT NOT NULL DEFAULT ''"),
+    ("tokens",        "default_role",    "TEXT NOT NULL DEFAULT ''"),
+    ("tokens",        "claimed_name",    "TEXT NOT NULL DEFAULT ''"),
+    ("tokens",        "claimed_avatar",  "TEXT NOT NULL DEFAULT ''"),
+    ("authors",       "verified",        "INTEGER NOT NULL DEFAULT 0"),
+    ("authors",       "role_badge",      "TEXT NOT NULL DEFAULT ''"),
+    ("posts",         "token_id",        "TEXT NOT NULL DEFAULT ''"),
+    ("posts",         "author_id",       "TEXT NOT NULL DEFAULT ''"),
+    ("posts",         "edited",          "TEXT NOT NULL DEFAULT ''"),
+    ("posts",         "reaction_fire",   "INTEGER NOT NULL DEFAULT 0"),
+    ("posts",         "reaction_skull",  "INTEGER NOT NULL DEFAULT 0"),
+    ("posts",         "reaction_eye",    "INTEGER NOT NULL DEFAULT 0"),
+    ("posts",         "reaction_bolt",   "INTEGER NOT NULL DEFAULT 0"),
+    ("chat",          "reply_to_nick",   "TEXT NOT NULL DEFAULT ''"),
+    ("firo_payments", "confirmed_at",    "TEXT NOT NULL DEFAULT ''"),
+    ("settings",      "updated",         "TEXT NOT NULL DEFAULT ''"),
 ]
 for table, col, typedef in columns:
     # Check table exists first
@@ -125,6 +129,28 @@ CREATE TABLE IF NOT EXISTS chat (
     reply_to_id  TEXT NOT NULL DEFAULT '',
     reply_to_nick TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS post_reactions (
+    id       TEXT PRIMARY KEY,
+    post_id  TEXT NOT NULL,
+    ip_hash  TEXT NOT NULL,
+    reaction TEXT NOT NULL,
+    created  TEXT NOT NULL DEFAULT '',
+    UNIQUE(post_id, ip_hash, reaction)
+);
+CREATE TABLE IF NOT EXISTS post_reports (
+    id       TEXT PRIMARY KEY,
+    post_id  TEXT NOT NULL,
+    ip_hash  TEXT NOT NULL,
+    reason   TEXT NOT NULL DEFAULT '',
+    created  TEXT NOT NULL DEFAULT '',
+    resolved INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS post_views (
+    post_id  TEXT NOT NULL,
+    sid_hash TEXT NOT NULL,
+    created  TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (post_id, sid_hash)
+);
 CREATE TABLE IF NOT EXISTS firo_payments (
     id           TEXT PRIMARY KEY,
     token_id     TEXT NOT NULL,
@@ -145,11 +171,15 @@ db.commit()
 
 # Indexes
 idx = [
-    ("idx_pc",         "posts",         "created DESC"),
-    ("idx_pp",         "posts",         "pinned DESC, created DESC"),
-    ("idx_firo_token", "firo_payments", "token_id"),
-    ("idx_firo_order", "firo_payments", "order_id"),
-    ("idx_ses_exp",    "flask_sessions","expires"),
+    ("idx_pc",           "posts",          "created DESC"),
+    ("idx_pp",           "posts",          "pinned DESC, created DESC"),
+    ("idx_firo_token",   "firo_payments",  "token_id"),
+    ("idx_firo_order",   "firo_payments",  "order_id"),
+    ("idx_ses_exp",      "flask_sessions", "expires"),
+    ("idx_react_post",   "post_reactions", "post_id"),
+    ("idx_report_post",  "post_reports",   "post_id"),
+    ("idx_report_res",   "post_reports",   "resolved"),
+    ("idx_pv_post",      "post_views",     "post_id"),
 ]
 for name, table, cols in idx:
     try:

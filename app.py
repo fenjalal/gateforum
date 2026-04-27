@@ -1056,27 +1056,52 @@ def post_react(post_id, reaction):
     post    = db.execute("SELECT id FROM posts WHERE id=?", (post_id,)).fetchone()
     if not post: abort(404)
     ip_hash = _ip_hash()
+
+    # Ensure post_reactions table exists (safe on old DBs)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS post_reactions (
+            id       TEXT PRIMARY KEY,
+            post_id  TEXT NOT NULL,
+            ip_hash  TEXT NOT NULL,
+            reaction TEXT NOT NULL,
+            created  TEXT NOT NULL DEFAULT '',
+            UNIQUE(post_id, ip_hash, reaction)
+        )
+    """)
+
+    # Ensure reaction columns exist on posts table
+    for col in ("reaction_fire","reaction_skull","reaction_eye","reaction_bolt"):
+        try:
+            db.execute(f"ALTER TABLE posts ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
+    db.commit()
+
     existing = db.execute(
         "SELECT id FROM post_reactions WHERE post_id=? AND ip_hash=? AND reaction=?",
         (post_id, ip_hash, reaction)
     ).fetchone()
     if existing:
-        # Toggle off
-        db.execute("DELETE FROM post_reactions WHERE post_id=? AND ip_hash=? AND reaction=?",
-                   (post_id, ip_hash, reaction))
-        db.execute(f"UPDATE posts SET reaction_{reaction}=MAX(0,reaction_{reaction}-1) WHERE id=?",
-                   (post_id,))
-    else:
-        # Toggle on
         db.execute(
-            "INSERT OR IGNORE INTO post_reactions (id,post_id,ip_hash,reaction,created) VALUES (?,?,?,?,?)",
+            "DELETE FROM post_reactions WHERE post_id=? AND ip_hash=? AND reaction=?",
+            (post_id, ip_hash, reaction)
+        )
+        db.execute(
+            f"UPDATE posts SET reaction_{reaction}=MAX(0,reaction_{reaction}-1) WHERE id=?",
+            (post_id,)
+        )
+    else:
+        db.execute(
+            "INSERT OR IGNORE INTO post_reactions (id,post_id,ip_hash,reaction,created) "
+            "VALUES (?,?,?,?,?)",
             (uuid.uuid4().hex, post_id, ip_hash, reaction,
              datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         )
-        db.execute(f"UPDATE posts SET reaction_{reaction}=reaction_{reaction}+1 WHERE id=?",
-                   (post_id,))
+        db.execute(
+            f"UPDATE posts SET reaction_{reaction}=reaction_{reaction}+1 WHERE id=?",
+            (post_id,)
+        )
     db.commit()
-    # Redirect back to post
     return redirect(url_for("post_detail", post_id=post_id) + "#reactions")
 
 
@@ -2413,6 +2438,9 @@ def admin_resolve_report(report_id):
     db.commit()
     log_action("report_resolved", f"report={report_id[:8]}")
     return redirect(url_for("admin_reports"))
+
+
+@app.route(f"/{ADMIN_PREFIX}/delete/<post_id>", methods=["POST"])
 @require_admin
 def admin_delete(post_id):
     db   = get_db()
