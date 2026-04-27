@@ -505,7 +505,69 @@ def init_db():
             created_at  TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_chat_created ON chat(created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS post_reactions (
+            id         TEXT PRIMARY KEY,
+            post_id    TEXT NOT NULL,
+            ip_hash    TEXT NOT NULL,
+            reaction   TEXT NOT NULL,
+            created    TEXT NOT NULL DEFAULT '',
+            UNIQUE(post_id, ip_hash, reaction)
+        );
+        CREATE INDEX IF NOT EXISTS idx_react_post ON post_reactions(post_id);
+
+        CREATE TABLE IF NOT EXISTS post_reports (
+            id         TEXT PRIMARY KEY,
+            post_id    TEXT NOT NULL,
+            ip_hash    TEXT NOT NULL,
+            reason     TEXT NOT NULL DEFAULT '',
+            created    TEXT NOT NULL DEFAULT '',
+            resolved   INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_report_post    ON post_reports(post_id);
+        CREATE INDEX IF NOT EXISTS idx_report_resolved ON post_reports(resolved);
+
+        CREATE TABLE IF NOT EXISTS post_views (
+            post_id    TEXT NOT NULL,
+            sid_hash   TEXT NOT NULL,
+            created    TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (post_id, sid_hash)
+        );
+        CREATE INDEX IF NOT EXISTS idx_pv_post ON post_views(post_id);
     """)
+    # FTS5 virtual table for full-text search
+    try:
+        db.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS posts_fts
+            USING fts5(title, body, content=posts, content_rowid=rowid,
+                       tokenize='unicode61')
+        """)
+        db.execute("""
+            CREATE TRIGGER IF NOT EXISTS posts_fts_insert AFTER INSERT ON posts BEGIN
+                INSERT INTO posts_fts(rowid, title, body)
+                VALUES (new.rowid, new.title, new.body);
+            END
+        """)
+        db.execute("""
+            CREATE TRIGGER IF NOT EXISTS posts_fts_delete AFTER DELETE ON posts BEGIN
+                INSERT INTO posts_fts(posts_fts, rowid, title, body)
+                VALUES ('delete', old.rowid, old.title, old.body);
+            END
+        """)
+        db.execute("""
+            CREATE TRIGGER IF NOT EXISTS posts_fts_update AFTER UPDATE ON posts BEGIN
+                INSERT INTO posts_fts(posts_fts, rowid, title, body)
+                VALUES ('delete', old.rowid, old.title, old.body);
+                INSERT INTO posts_fts(rowid, title, body)
+                VALUES (new.rowid, new.title, new.body);
+            END
+        """)
+        db.commit()
+        # Rebuild FTS index for existing posts
+        db.execute("INSERT INTO posts_fts(posts_fts) VALUES ('rebuild')")
+        db.commit()
+    except Exception:
+        pass  # FTS5 not available — graceful fallback to LIKE search
     # Safe column migrations
     migs = [
         ("authors", "verified",     "INTEGER NOT NULL DEFAULT 0"),
@@ -532,6 +594,10 @@ def init_db():
         ("posts",   "author_id",    "TEXT NOT NULL DEFAULT ''"),
         ("chat",    "reply_to_nick","TEXT NOT NULL DEFAULT ''"),
         ("firo_payments", "confirmed_at", "TEXT NOT NULL DEFAULT ''"),
+        ("posts", "reaction_fire",   "INTEGER NOT NULL DEFAULT 0"),
+        ("posts", "reaction_skull",  "INTEGER NOT NULL DEFAULT 0"),
+        ("posts", "reaction_eye",    "INTEGER NOT NULL DEFAULT 0"),
+        ("posts", "reaction_bolt",   "INTEGER NOT NULL DEFAULT 0"),
     ]
     for tbl, col, defn in migs:
         try:
@@ -910,6 +976,35 @@ def index():
         page=page, has_next=has_next, has_prev=page > 1,
         sidebar=_sidebar(db))
 
+def _ip_hash() -> str:
+    """One-way hash of IP — used for anonymous reaction/report dedup. Not reversible."""
+    ip  = request.remote_addr or "unknown"
+    sal = SECRET_KEY[:8].hex() if isinstance(SECRET_KEY, bytes) else SECRET_KEY[:8]
+    return hashlib.sha256(f"{sal}:{ip}".encode()).hexdigest()[:32]
+
+
+def _reaction_counts(db, post_id: str) -> dict:
+    rows = db.execute(
+        "SELECT reaction, COUNT(*) as n FROM post_reactions WHERE post_id=? GROUP BY reaction",
+        (post_id,)
+    ).fetchall()
+    counts = {"fire": 0, "skull": 0, "eye": 0, "bolt": 0}
+    for r in rows:
+        if r["reaction"] in counts:
+            counts[r["reaction"]] = r["n"]
+    return counts
+
+
+def _user_reactions(db, post_id: str) -> set:
+    """Reactions already cast by this IP on this post."""
+    iph  = _ip_hash()
+    rows = db.execute(
+        "SELECT reaction FROM post_reactions WHERE post_id=? AND ip_hash=?",
+        (post_id, iph)
+    ).fetchall()
+    return {r["reaction"] for r in rows}
+
+
 @app.route("/post/<post_id>")
 def post_detail(post_id):
     if get_setting("maintenance","0")=="1" and not _is_admin():
@@ -917,13 +1012,158 @@ def post_detail(post_id):
     db   = get_db()
     post = db.execute("SELECT * FROM posts WHERE id=?", (post_id,)).fetchone()
     if not post: abort(404)
-    db.execute("UPDATE posts SET views=views+1 WHERE id=?", (post_id,))
-    db.commit()
-    post = db.execute("SELECT * FROM posts WHERE id=?", (post_id,)).fetchone()
-    ed   = _enrich(post)
+
+    # ── Session-based view tracking (Tor-safe) ─────────────────────────────
+    sid      = session.get("sid") or secrets.token_hex(16)
+    session["sid"] = sid
+    sid_hash = hashlib.sha256(f"{SECRET_KEY[:4] if isinstance(SECRET_KEY,bytes) else SECRET_KEY[:4]}:{sid}:{post_id}".encode()).hexdigest()[:32]
+    try:
+        db.execute(
+            "INSERT OR IGNORE INTO post_views (post_id, sid_hash, created) VALUES (?,?,?)",
+            (post_id, sid_hash, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        )
+        if db.execute("SELECT changes()").fetchone()[0]:
+            db.execute("UPDATE posts SET views=views+1 WHERE id=?", (post_id,))
+        db.commit()
+    except Exception:
+        pass
+
+    post   = db.execute("SELECT * FROM posts WHERE id=?", (post_id,)).fetchone()
+    ed     = _enrich(post)
+    counts = _reaction_counts(db, post_id)
+    mine   = _user_reactions(db, post_id)
+
+    # ── Unresolved reports count (admin only) ──────────────────────────────
+    report_count = 0
+    if _is_admin():
+        r = db.execute(
+            "SELECT COUNT(*) FROM post_reports WHERE post_id=? AND resolved=0", (post_id,)
+        ).fetchone()
+        report_count = r[0] if r else 0
+
     return render_template("post.html",
         post=post, imgs=ed["imgs"], author_row=ed["author_row"], rt=ed["rt"],
-        tok_verified=ed["tok_verified"], tok_avatar=ed["tok_avatar"], sidebar=_sidebar(db))
+        tok_verified=ed["tok_verified"], tok_avatar=ed["tok_avatar"],
+        sidebar=_sidebar(db), reactions=counts, my_reactions=mine,
+        report_count=report_count)
+
+@app.route("/post/<post_id>/react/<reaction>", methods=["POST"])
+def post_react(post_id, reaction):
+    """Toggle an anonymous reaction on a post. No JS — plain form POST."""
+    if reaction not in ("fire", "skull", "eye", "bolt"):
+        abort(400)
+    db      = get_db()
+    post    = db.execute("SELECT id FROM posts WHERE id=?", (post_id,)).fetchone()
+    if not post: abort(404)
+    ip_hash = _ip_hash()
+    existing = db.execute(
+        "SELECT id FROM post_reactions WHERE post_id=? AND ip_hash=? AND reaction=?",
+        (post_id, ip_hash, reaction)
+    ).fetchone()
+    if existing:
+        # Toggle off
+        db.execute("DELETE FROM post_reactions WHERE post_id=? AND ip_hash=? AND reaction=?",
+                   (post_id, ip_hash, reaction))
+        db.execute(f"UPDATE posts SET reaction_{reaction}=MAX(0,reaction_{reaction}-1) WHERE id=?",
+                   (post_id,))
+    else:
+        # Toggle on
+        db.execute(
+            "INSERT OR IGNORE INTO post_reactions (id,post_id,ip_hash,reaction,created) VALUES (?,?,?,?,?)",
+            (uuid.uuid4().hex, post_id, ip_hash, reaction,
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        )
+        db.execute(f"UPDATE posts SET reaction_{reaction}=reaction_{reaction}+1 WHERE id=?",
+                   (post_id,))
+    db.commit()
+    # Redirect back to post
+    return redirect(url_for("post_detail", post_id=post_id) + "#reactions")
+
+
+@app.route("/post/<post_id>/report", methods=["POST"])
+def post_report(post_id):
+    """Anonymous report — IP-hashed, no identity stored."""
+    db      = get_db()
+    post    = db.execute("SELECT id FROM posts WHERE id=?", (post_id,)).fetchone()
+    if not post: abort(404)
+    ip_hash = _ip_hash()
+    reason  = request.form.get("reason","").strip()[:200]
+    # Limit: 1 report per IP per post
+    existing = db.execute(
+        "SELECT id FROM post_reports WHERE post_id=? AND ip_hash=?",
+        (post_id, ip_hash)
+    ).fetchone()
+    if not existing:
+        db.execute(
+            "INSERT INTO post_reports (id,post_id,ip_hash,reason,created) VALUES (?,?,?,?,?)",
+            (uuid.uuid4().hex, post_id, ip_hash, reason,
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        )
+        db.commit()
+    return redirect(url_for("post_detail", post_id=post_id) + "?reported=1")
+
+
+@app.route("/u/<username>")
+def public_profile(username):
+    """Public contributor profile — shows posts and badge, no private info."""
+    db  = get_db()
+    tok = db.execute(
+        "SELECT id, claimed_name, claimed_avatar, verified, label "
+        "FROM tokens WHERE (claimed_name=? OR label=?) AND revoked=0 LIMIT 1",
+        (username, username)
+    ).fetchone()
+    if not tok: abort(404)
+    posts = db.execute(
+        "SELECT * FROM posts WHERE token_id=? ORDER BY created DESC LIMIT 20",
+        (tok["id"],)
+    ).fetchall()
+    return render_template("public_profile.html",
+        profile=tok, posts=[_enrich(p) for p in posts])
+
+
+@app.route("/feed.xml")
+def rss_feed():
+    """RSS 2.0 feed — last 20 posts. Works on Tor and clearnet."""
+    db    = get_db()
+    posts = db.execute(
+        "SELECT * FROM posts ORDER BY created DESC LIMIT 20"
+    ).fetchall()
+    base  = _get_site_base() or f"http://{request.host}"
+    title = get_setting("site_title", "GateForum")
+    desc  = get_setting("site_tagline", "Independent · Anonymous · Uncensored")
+
+    items = []
+    for p in posts:
+        link    = f"{base}/post/{p['id']}"
+        pub     = p["created"].replace(" ", "T") + "+00:00"
+        excerpt = re.sub(r'[<>&"\']', '', (p["body"] or ""))[:300]
+        items.append(
+            f"<item>"
+            f"<title><![CDATA[{p['title']}]]></title>"
+            f"<link>{link}</link>"
+            f"<guid isPermaLink=\"true\">{link}</guid>"
+            f"<pubDate>{pub}</pubDate>"
+            f"<description><![CDATA[{excerpt}]]></description>"
+            f"</item>"
+        )
+
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">'
+        f'<channel>'
+        f'<title>{title}</title>'
+        f'<link>{base}</link>'
+        f'<description>{desc}</description>'
+        f'<language>en</language>'
+        f'<atom:link href="{base}/feed.xml" rel="self" type="application/rss+xml"/>'
+        + "".join(items) +
+        '</channel></rss>'
+    )
+    resp = make_response(xml)
+    resp.headers["Content-Type"]  = "application/rss+xml; charset=utf-8"
+    resp.headers["Cache-Control"] = "public, max-age=300"
+    return resp
+
 
 # ── Anonymous Chat System ──────────────────────────────────────────────────
 import random
@@ -1197,9 +1437,24 @@ def search():
     db = get_db()
     results = []
     if q:
-        like = f"%{q}%"
-        rows = db.execute("SELECT * FROM posts WHERE title LIKE ? OR body LIKE ? ORDER BY created DESC LIMIT 30",
-                          (like,like)).fetchall()
+        # Try FTS5 first — much faster and relevance-ranked
+        try:
+            # Escape FTS5 special chars
+            q_fts = re.sub(r'["\*\^\(\)\[\]\{\}\\]', ' ', q).strip()
+            rows  = db.execute(
+                """SELECT posts.* FROM posts
+                   JOIN posts_fts ON posts.rowid = posts_fts.rowid
+                   WHERE posts_fts MATCH ?
+                   ORDER BY rank LIMIT 30""",
+                (q_fts,)
+            ).fetchall()
+        except Exception:
+            # FTS5 unavailable or query error — fallback to LIKE
+            like = f"%{q}%"
+            rows = db.execute(
+                "SELECT * FROM posts WHERE title LIKE ? OR body LIKE ? ORDER BY created DESC LIMIT 30",
+                (like, like)
+            ).fetchall()
         results = [_enrich(r) for r in rows]
     return render_template("search.html", q=q, results=results, sidebar=_sidebar(db))
 
@@ -2136,7 +2391,28 @@ def admin_dashboard():
         all_roles=ALL_ROLES)
 
 # ── Admin post actions ─────────────────────────────────────────────────────
-@app.route(f"/{ADMIN_PREFIX}/delete/<post_id>", methods=["POST"])
+@app.route(f"/{ADMIN_PREFIX}/reports")
+@require_admin
+def admin_reports():
+    db = get_db()
+    reports = db.execute(
+        """SELECT r.*, p.title as post_title
+           FROM post_reports r
+           LEFT JOIN posts p ON r.post_id = p.id
+           WHERE r.resolved=0
+           ORDER BY r.created DESC LIMIT 100"""
+    ).fetchall()
+    return render_template("admin_reports.html", reports=reports)
+
+
+@app.route(f"/{ADMIN_PREFIX}/reports/resolve/<report_id>", methods=["POST"])
+@require_admin
+def admin_resolve_report(report_id):
+    db = get_db()
+    db.execute("UPDATE post_reports SET resolved=1 WHERE id=?", (report_id,))
+    db.commit()
+    log_action("report_resolved", f"report={report_id[:8]}")
+    return redirect(url_for("admin_reports"))
 @require_admin
 def admin_delete(post_id):
     db   = get_db()

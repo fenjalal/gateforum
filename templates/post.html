@@ -3,21 +3,107 @@
 {% block content %}
 <div class="page-grid">
   {% include '_sidebar_left.html' %}
+
   <article class="post-detail">
     <a href="{{ url_for('index') }}" class="back-link">&larr; Back</a>
+
     {% if imgs %}
-    <div class="post-imgs {% if imgs|length > 1 %}post-imgs--grid{% endif %} post-imgs--detail">
+    <div class="post-imgs post-imgs--detail {% if imgs|length > 1 %}post-imgs--grid{% endif %}">
       {% for img in imgs %}
-      <img src="{{ url_for('static', filename='uploads/' ~ img) }}" alt="" loading="lazy" decoding="async" class="post-img">
+      <img src="{{ url_for('static', filename='uploads/' ~ img) }}"
+           alt="" loading="{% if loop.index == 1 %}eager{% else %}lazy{% endif %}"
+           decoding="async" class="post-img">
       {% endfor %}
     </div>
     {% endif %}
-    <div class="post-meta">{{ post.created[:16] }} UTC &bull; {{ rt }} min read &bull; &#128065; {{ post.views }} views</div>
+
+    <div class="post-meta">
+      {{ post.created[:16] }} UTC &bull; {{ rt }} min read &bull;
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+      </svg>
+      {{ post.views }}
+    </div>
     <h1 class="detail-title">{{ post.title }}</h1>
     {% include '_byline.html' %}
     <hr class="post-hr">
     <div class="post-body">{{ post.body | md }}</div>
+
+    {# ── Reactions ── #}
+    <div class="reactions-wrap" id="reactions">
+      {% set reaction_defs = [
+        ('fire',  'M12 2c0 0-5 4-5 9a5 5 0 0 0 10 0c0-5-5-9-5-9zm0 4c0 0-2 3-2 5a2 2 0 0 0 4 0c0-2-2-5-2-5z'),
+        ('skull', 'M12 2a7 7 0 0 0-7 7c0 2.4 1.2 4.5 3 5.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3c1.8-1.2 3-3.3 3-5.7a7 7 0 0 0-7-7zM9 17v1h6v-1M9 14h2v2H9zM13 14h2v2h-2z'),
+        ('eye',   'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'),
+        ('bolt',  'M13 2L3 14h9l-1 8 10-12h-9l1-8z'),
+      ] %}
+      {% for key, path in reaction_defs %}
+      <form method="POST" action="{{ url_for('post_react', post_id=post.id, reaction=key) }}" class="react-form">
+        <button type="submit" class="react-btn {% if key in my_reactions %}react-btn--active{% endif %}"
+                title="{{ key | title }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="{{ path }}"/>
+          </svg>
+          <span class="react-count">{{ reactions[key] }}</span>
+        </button>
+      </form>
+      {% endfor %}
+
+      {# Report button #}
+      <div class="react-sep"></div>
+      {% if request.args.get('reported') %}
+        <span class="react-reported">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          Reported
+        </span>
+      {% else %}
+      <details class="report-details">
+        <summary class="react-btn report-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+          </svg>
+          Report
+          {% if report_count %}<span class="react-count" style="color:#eb5757">{{ report_count }}</span>{% endif %}
+        </summary>
+        <form method="POST" action="{{ url_for('post_report', post_id=post.id) }}" class="report-form">
+          <select name="reason" class="report-select">
+            <option value="">Select reason…</option>
+            <option value="spam">Spam</option>
+            <option value="misinformation">Misinformation</option>
+            <option value="harmful">Harmful content</option>
+            <option value="other">Other</option>
+          </select>
+          <button type="submit" class="btn btn-danger btn-sm">Submit Report</button>
+        </form>
+      </details>
+      {% endif %}
+    </div>
+
   </article>
+
   {% include '_sidebar_right.html' %}
 </div>
+
+<style>
+/* ── Reactions ────────────────────────────────────────────────── */
+.reactions-wrap{display:flex;align-items:center;flex-wrap:wrap;gap:.4rem;margin-top:1.4rem;padding-top:.9rem;border-top:1px solid var(--border)}
+.react-form{margin:0}
+.react-btn{display:inline-flex;align-items:center;gap:.3rem;background:var(--bg3);border:1px solid var(--border);color:var(--text-dim);border-radius:20px;padding:.3rem .65rem;cursor:pointer;font-family:var(--mono);font-size:.68rem;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.react-btn:hover{border-color:var(--accent);color:var(--text-head)}
+.react-btn--active{background:rgba(226,194,70,.12);border-color:rgba(226,194,70,.5);color:#e2c246}
+.react-count{font-weight:700;min-width:.8rem;text-align:center}
+.react-sep{width:1px;height:20px;background:var(--border);margin:0 .2rem}
+.react-reported{display:inline-flex;align-items:center;gap:.3rem;font-family:var(--mono);font-size:.65rem;color:var(--green)}
+/* Report */
+.report-details{display:inline-flex;flex-direction:column;gap:.4rem}
+.report-details summary{list-style:none;cursor:pointer}
+.report-details summary::-webkit-details-marker{display:none}
+.report-btn{background:transparent;border:1px solid var(--border)}
+.report-btn:hover{border-color:#eb5757;color:#eb5757}
+.report-form{display:flex;align-items:center;gap:.4rem;margin-top:.4rem;flex-wrap:wrap}
+.report-select{background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.68rem;padding:.3rem .5rem;border-radius:4px;outline:none}
+</style>
 {% endblock %}

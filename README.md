@@ -328,7 +328,7 @@ gateforum/
 
 ---
 
-## Upgrading
+## Upgrade or Updating
 
 ```bash
 # 1. Back up data
@@ -347,6 +347,29 @@ python3 migrate.py
 # 5. Restart
 bash start.sh
 ```
+🔀 If you forked the repo:
+
+First, sync your fork with the original (one time setup):
+```
+git remote add upstream https://github.com/fenjalal/gateforum
+```
+Then pull the update:
+```
+git fetch upstream
+git merge upstream/main
+git push
+```
+Then on your server:
+```
+git pull
+pip install -r requirements.txt
+python3 migrate.py
+bash start.sh
+```
+━━━━━━━━━━━━━━━━━━
+
+⚠️ Don't skip migrate.py — this update adds new database tables. Skipping it will break the site.
+
 
 ---
 
@@ -369,9 +392,13 @@ Free to use, modify, and distribute. Attribution appreciated.
 ---
 <div align="center">
 
-**GateForum** — Open Source · Freedom is key  
+**GateForum** — Open Source 
 
-Check if the site is online (the server may be offline): [GateForum Site](https://muscular-zoom-showbiz.ngrok-free.dev)  
+Check if the site is online (the server may be offline): 
+```
+http://zplr4p2oaeeqypu4f63b74vlmudsjwa4lb5habq76mhf6o7dhpniteid.onion
+```
+[GateForum Site](#)  
 
 *Built for privacy. Built for anonymity. Built to last.*
 
@@ -382,5 +409,5 @@ Check if the site is online (the server may be offline): [GateForum Site](https:
 
 
 </div>
-
+join
 > Contributors fen & parood

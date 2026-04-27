@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.claimed_name or profile.label }} — GateForum{% endblock %}
+{% block content %}
+<div class="page-grid"><div></div>
+<div class="form-wrap" style="max-width:660px">
+
+  <div class="pp-card">
+    <div class="pp-avatar">
+      {% if profile.claimed_avatar %}
+        <img src="{{ url_for('static', filename='avatars/' ~ profile.claimed_avatar) }}" alt="">
+      {% else %}
+        <span>{{ (profile.claimed_name or profile.label)[0] | upper }}</span>
+      {% endif %}
+    </div>
+    <div class="pp-info">
+      <div class="pp-name">
+        {{ profile.claimed_name or profile.label }}
+        {% if profile.verified %}
+        <svg width="15" height="15" viewBox="0 0 24 24" title="Verified">
+          <path fill="#e2c246" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/>
+        </svg>
+        {% endif %}
+      </div>
+      <div class="pp-meta">
+        Contributor &nbsp;·&nbsp; {{ posts|length }} post{% if posts|length != 1 %}s{% endif %}
+        {% if profile.verified %}&nbsp;·&nbsp; <span style="color:var(--green)">Verified</span>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="pp-section-title">Posts</div>
+
+  {% if posts %}
+    {% for item in posts %}{% set p=item.post %}{% set imgs=item.imgs %}
+    <div class="dash-row">
+      {% if imgs %}
+      <img src="{{ url_for('static', filename='uploads/' ~ imgs[0]) }}" class="dash-thumb" alt="" loading="lazy">
+      {% endif %}
+      <div class="dash-info">
+        <div class="dash-title">
+          <a href="{{ url_for('post_detail', post_id=p.id) }}">{{ p.title }}</a>
+        </div>
+        <div class="dash-meta">
+          {{ p.created[:10] }}
+          {% if p.role %}&nbsp;·&nbsp;<span class="role-badge role-{{ p.role }}">{{ p.role }}</span>{% endif %}
+          &nbsp;·&nbsp;
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+          {{ p.views }}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="dash-empty">No posts yet.</div>
+  {% endif %}
+
+</div>
+<div></div></div>
+
+<style>
+.pp-card{display:flex;align-items:center;gap:1rem;padding:1rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);margin-bottom:1.2rem}
+.pp-avatar{width:60px;height:60px;border-radius:50%;overflow:hidden;background:var(--bg4);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.pp-avatar img{width:100%;height:100%;object-fit:cover}
+.pp-avatar span{font-family:var(--mono);font-size:1.5rem;font-weight:700;color:var(--accent)}
+.pp-name{display:flex;align-items:center;gap:.35rem;font-size:1rem;font-weight:700;color:var(--text-head);margin-bottom:.2rem}
+.pp-meta{font-family:var(--mono);font-size:.6rem;color:var(--text-dim)}
+.pp-section-title{font-family:var(--mono);font-size:.58rem;text-transform:uppercase;letter-spacing:.12em;color:var(--text-dim);margin-bottom:.6rem}
+</style>
+{% endblock %}
