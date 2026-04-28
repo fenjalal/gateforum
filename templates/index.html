@@ -6,12 +6,12 @@
   <section class="feed">
     {% if pinned_data %}
     <div class="pin-label">&#9733; Pinned</div>
-    {% for item in pinned_data %}{% set post=item.post %}{% set imgs=item.imgs %}{% set author_row=item.author_row %}{% set rt=item.rt %}{% set tok_verified=item.tok_verified %}{% set tok_avatar=item.tok_avatar %}
+    {% for item in pinned_data %}{% set post=item.post %}{% set imgs=item.imgs %}{% set author_row=item.author_row %}{% set rt=item.rt %}{% set tok_verified=item.tok_verified %}{% set tok_avatar=item.tok_avatar %}{% set my_reactions=my_reactions_map.get(post.id, []) %}
     {% include '_post_card.html' %}{% endfor %}
     {% endif %}
     <div class="feed-hdr">Latest &mdash; page {{ page }}</div>
     {% if posts_data %}
-      {% for item in posts_data %}{% set post=item.post %}{% set imgs=item.imgs %}{% set author_row=item.author_row %}{% set rt=item.rt %}{% set tok_verified=item.tok_verified %}{% set tok_avatar=item.tok_avatar %}
+      {% for item in posts_data %}{% set post=item.post %}{% set imgs=item.imgs %}{% set author_row=item.author_row %}{% set rt=item.rt %}{% set tok_verified=item.tok_verified %}{% set tok_avatar=item.tok_avatar %}{% set my_reactions=my_reactions_map.get(post.id, []) %}
       {% include '_post_card.html' %}{% endfor %}
       <nav class="paging">
         {% if has_prev %}<a href="{{ url_for('index', page=page-1) }}">&larr; Newer</a>{% else %}<span>&larr; Newer</span>{% endif %}

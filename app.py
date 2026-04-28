@@ -718,18 +718,33 @@ def _enrich(post) -> dict:
     try:   imgs = json.loads(post["images"])
     except: imgs = []
     ar = _author_by_id(post["author_id"]) or _author_by_name(post["author"])
-    # Check if post was made by a verified token and get avatar
     tok_verified = False
-    tok_avatar = ""
+    tok_avatar   = ""
     if post["token_id"]:
-        db = get_db()
-        tok = db.execute("SELECT verified, claimed_avatar FROM tokens WHERE id=?", (post["token_id"],)).fetchone()
+        db  = get_db()
+        tok = db.execute(
+            "SELECT verified, claimed_avatar FROM tokens WHERE id=?",
+            (post["token_id"],)
+        ).fetchone()
         if tok:
             tok_verified = bool(tok["verified"])
-            tok_avatar = tok["claimed_avatar"] or ""
-    return {"post": post, "imgs": imgs, "author_row": ar,
-            "rt": max(1, round(len(post["body"].split()) / 200)),
-            "tok_verified": tok_verified, "tok_avatar": tok_avatar}
+            tok_avatar   = tok["claimed_avatar"] or ""
+
+    # Realistic read time — 200 wpm, round up to nearest even number
+    words    = len(post["body"].split())
+    raw_mins = words / 200
+    if raw_mins <= 1:
+        rt = 1
+    elif raw_mins <= 2:
+        rt = 2
+    else:
+        # Round up to next even: 3→4, 5→6, 7→8, 9→10...
+        rt = math.ceil(raw_mins / 2) * 2
+
+    return {
+        "post": post, "imgs": imgs, "author_row": ar,
+        "rt": rt, "tok_verified": tok_verified, "tok_avatar": tok_avatar
+    }
 
 # ── Sidebar ────────────────────────────────────────────────────────────────
 def _sidebar(db) -> dict:
@@ -970,39 +985,90 @@ def index():
     has_next = len(final) > ppp
     final    = final[:ppp]
 
+    all_post_ids = [p["id"] for p in pinned + final]
+
+    # Live reaction counts from post_reactions table — single source of truth
+    card_counts: dict = {}
+    if all_post_ids:
+        try:
+            ph   = ",".join("?" * len(all_post_ids))
+            rows = db.execute(
+                f"SELECT post_id, reaction, COUNT(*) as n FROM post_reactions "
+                f"WHERE post_id IN ({ph}) AND reaction IN ('fire','bolt') "
+                f"GROUP BY post_id, reaction",
+                all_post_ids
+            ).fetchall()
+            for r in rows:
+                card_counts.setdefault(r["post_id"], {"fire": 0, "bolt": 0})
+                card_counts[r["post_id"]][r["reaction"]] = r["n"]
+        except Exception:
+            pass
+
     return render_template("index.html",
         pinned_data=[_enrich(p) for p in pinned],
         posts_data=[_enrich(p) for p in final],
         page=page, has_next=has_next, has_prev=page > 1,
-        sidebar=_sidebar(db))
+        sidebar=_sidebar(db),
+        card_counts=card_counts,
+        my_reactions_map=_user_reactions_for_posts(db, all_post_ids))
 
 def _ip_hash() -> str:
-    """One-way hash of IP — used for anonymous reaction/report dedup. Not reversible."""
+    """One-way hash of IP+secret — anonymous dedup, not reversible."""
     ip  = request.remote_addr or "unknown"
-    sal = SECRET_KEY[:8].hex() if isinstance(SECRET_KEY, bytes) else SECRET_KEY[:8]
+    sal = (SECRET_KEY[:16].hex() if isinstance(SECRET_KEY, bytes)
+           else hashlib.sha256(str(SECRET_KEY).encode()).hexdigest()[:16])
     return hashlib.sha256(f"{sal}:{ip}".encode()).hexdigest()[:32]
 
 
 def _reaction_counts(db, post_id: str) -> dict:
-    rows = db.execute(
-        "SELECT reaction, COUNT(*) as n FROM post_reactions WHERE post_id=? GROUP BY reaction",
-        (post_id,)
-    ).fetchall()
-    counts = {"fire": 0, "skull": 0, "eye": 0, "bolt": 0}
-    for r in rows:
-        if r["reaction"] in counts:
+    """Always read live from post_reactions table — single source of truth."""
+    counts = {"fire": 0, "bolt": 0}
+    try:
+        rows = db.execute(
+            "SELECT reaction, COUNT(*) as n FROM post_reactions "
+            "WHERE post_id=? AND reaction IN ('fire','bolt') "
+            "GROUP BY reaction",
+            (post_id,)
+        ).fetchall()
+        for r in rows:
             counts[r["reaction"]] = r["n"]
+    except Exception:
+        pass
     return counts
+
+
+def _user_reactions_for_posts(db, post_ids: list) -> dict:
+    """Returns {post_id: set(reactions)} for current IP — used in feed."""
+    if not post_ids:
+        return {}
+    iph = _ip_hash()
+    try:
+        ph   = ",".join("?" * len(post_ids))
+        rows = db.execute(
+            f"SELECT post_id, reaction FROM post_reactions "
+            f"WHERE ip_hash=? AND post_id IN ({ph}) AND reaction IN ('fire','bolt')",
+            [iph] + list(post_ids)
+        ).fetchall()
+        result: dict = {}
+        for r in rows:
+            result.setdefault(r["post_id"], set()).add(r["reaction"])
+        return result
+    except Exception:
+        return {}
 
 
 def _user_reactions(db, post_id: str) -> set:
     """Reactions already cast by this IP on this post."""
-    iph  = _ip_hash()
-    rows = db.execute(
-        "SELECT reaction FROM post_reactions WHERE post_id=? AND ip_hash=?",
-        (post_id, iph)
-    ).fetchall()
-    return {r["reaction"] for r in rows}
+    iph = _ip_hash()
+    try:
+        rows = db.execute(
+            "SELECT reaction FROM post_reactions "
+            "WHERE post_id=? AND ip_hash=? AND reaction IN ('fire','bolt')",
+            (post_id, iph)
+        ).fetchall()
+        return {r["reaction"] for r in rows}
+    except Exception:
+        return set()
 
 
 @app.route("/post/<post_id>")
@@ -1049,15 +1115,27 @@ def post_detail(post_id):
 
 @app.route("/post/<post_id>/react/<reaction>", methods=["POST"])
 def post_react(post_id, reaction):
-    """Toggle an anonymous reaction on a post. No JS — plain form POST."""
-    if reaction not in ("fire", "skull", "eye", "bolt"):
+    """
+    Toggle anonymous reaction. Eye is NOT a reaction — it's auto-counted as views.
+    Only fire/bolt are user-toggled. Skull removed. Eye is auto view tracking only.
+    Counts always come from post_reactions table, never from posts.reaction_* columns.
+    """
+    VALID = {"fire", "bolt"}   # fire + bolt only
+    if reaction not in VALID:
         abort(400)
-    db      = get_db()
-    post    = db.execute("SELECT id FROM posts WHERE id=?", (post_id,)).fetchone()
-    if not post: abort(404)
+
+    # Sanitize post_id — must be hex
+    if not re.match(r'^[a-f0-9]{32}$', post_id):
+        abort(400)
+
+    db   = get_db()
+    post = db.execute("SELECT id FROM posts WHERE id=?", (post_id,)).fetchone()
+    if not post:
+        abort(404)
+
     ip_hash = _ip_hash()
 
-    # Ensure post_reactions table exists (safe on old DBs)
+    # Ensure table exists (idempotent)
     db.execute("""
         CREATE TABLE IF NOT EXISTS post_reactions (
             id       TEXT PRIMARY KEY,
@@ -1068,40 +1146,33 @@ def post_react(post_id, reaction):
             UNIQUE(post_id, ip_hash, reaction)
         )
     """)
-
-    # Ensure reaction columns exist on posts table
-    for col in ("reaction_fire","reaction_skull","reaction_eye","reaction_bolt"):
-        try:
-            db.execute(f"ALTER TABLE posts ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
-        except Exception:
-            pass
     db.commit()
 
     existing = db.execute(
         "SELECT id FROM post_reactions WHERE post_id=? AND ip_hash=? AND reaction=?",
         (post_id, ip_hash, reaction)
     ).fetchone()
+
     if existing:
+        # Toggle off
         db.execute(
             "DELETE FROM post_reactions WHERE post_id=? AND ip_hash=? AND reaction=?",
             (post_id, ip_hash, reaction)
         )
-        db.execute(
-            f"UPDATE posts SET reaction_{reaction}=MAX(0,reaction_{reaction}-1) WHERE id=?",
-            (post_id,)
-        )
     else:
+        # Toggle on — INSERT OR IGNORE prevents duplicates from double-submit
         db.execute(
             "INSERT OR IGNORE INTO post_reactions (id,post_id,ip_hash,reaction,created) "
             "VALUES (?,?,?,?,?)",
             (uuid.uuid4().hex, post_id, ip_hash, reaction,
              datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         )
-        db.execute(
-            f"UPDATE posts SET reaction_{reaction}=reaction_{reaction}+1 WHERE id=?",
-            (post_id,)
-        )
     db.commit()
+
+    # Redirect: if came from feed (next=index), go back to feed — don't enter post
+    next_url = request.form.get("next", "")
+    if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+        return redirect(next_url)
     return redirect(url_for("post_detail", post_id=post_id) + "#reactions")
 
 
@@ -2437,6 +2508,28 @@ def admin_resolve_report(report_id):
     db.execute("UPDATE post_reports SET resolved=1 WHERE id=?", (report_id,))
     db.commit()
     log_action("report_resolved", f"report={report_id[:8]}")
+    return redirect(url_for("admin_reports"))
+
+
+@app.route(f"/{ADMIN_PREFIX}/reports/delete/<report_id>/<post_id>", methods=["POST"])
+@require_admin
+def admin_delete_reported(report_id, post_id):
+    """Delete the reported post and resolve the report in one action."""
+    # Validate post_id is safe hex
+    if not re.match(r'^[a-f0-9]{32}$', post_id):
+        abort(400)
+    db   = get_db()
+    post = db.execute("SELECT * FROM posts WHERE id=?", (post_id,)).fetchone()
+    if post:
+        _del_images(post)
+        db.execute("DELETE FROM posts WHERE id=?", (post_id,))
+        log_action("post_deleted_reported",
+                   f"admin deleted reported post '{post['title']}'")
+    # Resolve all reports for this post
+    db.execute(
+        "UPDATE post_reports SET resolved=1 WHERE post_id=?", (post_id,)
+    )
+    db.commit()
     return redirect(url_for("admin_reports"))
 
 

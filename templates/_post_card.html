@@ -1,16 +1,72 @@
 <article class="post-card {% if post.pinned %}post-card--pinned{% endif %}">
+
+  {# ── Thumbnail ── #}
   {% if imgs %}
-  <div class="post-imgs {% if imgs|length > 1 %}post-imgs--grid{% endif %}">
-    {% for img in imgs %}
-    <img src="{{ url_for('static', filename='uploads/' ~ img) }}" alt="" loading="lazy" decoding="async" class="post-img">
-    {% endfor %}
-  </div>
+  <a href="{{ url_for('post_detail', post_id=post.id) }}" class="post-card-img-link">
+    <div class="post-card-img-wrap">
+      <img src="{{ url_for('static', filename='uploads/' ~ imgs[0]) }}"
+           alt="{{ post.title }}" loading="lazy" decoding="async" class="post-card-img">
+      {% if imgs|length > 1 %}
+      <span class="post-img-count">
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+        +{{ imgs|length - 1 }}
+      </span>
+      {% endif %}
+    </div>
+  </a>
   {% endif %}
+
   <div class="post-card-body">
     {% include '_byline.html' %}
-    <div class="post-meta">{{ post.created[:16] }} &bull; {{ rt }} min read &bull; &#128065; {{ post.views }}</div>
-    <h2 class="post-title"><a href="{{ url_for('post_detail', post_id=post.id) }}">{{ post.title }}</a></h2>
-    <div class="post-excerpt">{{ post.body | strip_md | truncate(280, True, '…') }}</div>
-    <a href="{{ url_for('post_detail', post_id=post.id) }}" class="read-more">Read more &rarr;</a>
+    <div class="post-meta">
+      {{ post.created[:10] }} &bull; {{ rt }} min read &bull; {{ post.views }} views
+    </div>
+    <h2 class="post-title">
+      <a href="{{ url_for('post_detail', post_id=post.id) }}">{{ post.title }}</a>
+    </h2>
+    {% set excerpt = post.body | strip_md %}
+    {% if excerpt | length > 120 %}
+    <div class="post-excerpt">{{ excerpt[:120] | trim }}…</div>
+    {% elif excerpt %}
+    <div class="post-excerpt">{{ excerpt }}</div>
+    {% endif %}
+
+    {# ── Footer: read more on left, fire+bolt on right, same row ── #}
+    <div class="post-card-footer">
+      <a href="{{ url_for('post_detail', post_id=post.id) }}" class="read-more">Read more &rarr;</a>
+
+      {# Wrap both forms in one flex row ── #}
+      <div class="card-reactions">
+        {# fire ── #}
+        <form method="POST"
+              action="{{ url_for('post_react', post_id=post.id, reaction='fire') }}">
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <button type="submit"
+                  class="card-react-btn{% if 'fire' in (my_reactions or []) %} card-react-btn--on{% endif %}">
+            <svg width="14" height="14" viewBox="0 0 16 16"><path fill="currentColor" d="M4.9 15.8S1 15.4 1 10.1C1 6 4.1 3.6 4.1 3.6S5.4 5 6.4 5.5C7.4 6.1 7.8 0 7.8 0S15 3.9 15 9.8c0 6.1-4 5.9-4 5.9s1.8-2.4 1.8-5.2c0-3-3.9-6.7-3.9-6.7s-.5 4.4-2.1 5c-1.6-.9-2.5-2.3-2.5-2.3s-3.7 5.8.6 9.3z"/><path fill="currentColor" d="M8.2 16.1c-2-.1-3.7-1.4-3.7-3.2s.7-2.6.7-2.6s.5 1 1.1 1.5s1.8.8 2.4.1c.6-.6.8-2.3.8-2.3s1.4 1.1 1.2 3c-.1 2-.9 3.5-2.5 3.5z"/></svg>
+            {{ card_counts[post.id]['fire'] if card_counts is defined and post.id in card_counts else (post.reaction_fire or 0) }}
+          </button>
+        </form>
+        {# bolt ── #}
+        <form method="POST"
+              action="{{ url_for('post_react', post_id=post.id, reaction='bolt') }}">
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <button type="submit"
+                  class="card-react-btn{% if 'bolt' in (my_reactions or []) %} card-react-btn--on{% endif %}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+            </svg>
+            {{ card_counts[post.id]['bolt'] if card_counts is defined and post.id in card_counts else (post.reaction_bolt or 0) }}
+          </button>
+        </form>
+      </div>
+    </div>
   </div>
 </article>
