@@ -124,6 +124,7 @@ main{flex:1;padding:1.4rem 0 3rem}
   flex-wrap:nowrap;gap:.5rem;
   margin-top:.7rem;
 }
+
 .card-reactions {
   display: flex;
   align-items: center;
