@@ -95,7 +95,7 @@
       <input type="hidden" name="action" value="send">
       <input type="hidden" name="reply_to" value="{{ reply_msg.id if reply_msg else '' }}">
       <textarea name="message" placeholder="Type message..." maxlength="1000" rows="3" class="chat-textarea" required></textarea>
-      {% if is_token_user %}
+      {% if is_token_user and tok_row and tok_row.verified %}
       <div class="chat-file-row">
         <label class="chk-label"><span>Image:</span> <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" class="if-file"></label>
       </div>
@@ -103,9 +103,15 @@
       <button type="submit" class="btn btn-primary btn-sm">SEND</button>
     </form>
   </div>
-  
+
   <div class="chat-footer-text">
-    Messages disappear after reply{% if not is_token_user %} · <a href="{{ url_for('token_login') }}">Get verified</a> for images{% endif %}
+    {% if not is_token_user %}
+      <a href="{{ url_for('self_register') }}">Create account</a> · <a href="{{ url_for('token_login') }}">Login</a>
+    {% elif not tok_row.verified %}
+      Image sharing requires a <a href="{{ url_for('firo_pay') }}">verified account</a>
+    {% else %}
+      Verified — image sharing enabled ✓
+    {% endif %}
   </div>
   
 </div>

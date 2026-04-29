@@ -1480,9 +1480,9 @@ def chat_page():
         if not msg_text:
             error = "Message cannot be empty."
         else:
-            # Handle image upload (token users only)
+            # Handle image upload — verified users only
             img_filename = ""
-            if is_token_user:
+            if is_token_user and tok["verified"]:
                 img_file = request.files.get("image")
                 if img_file and img_file.filename:
                     allowed = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
