@@ -28,11 +28,13 @@
     {% if not is_token_user %}
     <div class="dash-acts">
       <form method="POST" class="chat-nick-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="set_nick">
         <input type="text" name="nickname" placeholder="Name" maxlength="30" class="if-input chat-nick-input">
         <button type="submit" class="btn btn-secondary btn-sm">Set</button>
       </form>
       <form method="POST">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="new_nick">
         <button type="submit" class="btn btn-ghost btn-sm">Rand</button>
       </form>
@@ -89,6 +91,7 @@
     {% endif %}
     
     <form method="POST" {% if is_token_user %}enctype="multipart/form-data"{% endif %}>
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="send">
       <input type="hidden" name="reply_to" value="{{ reply_msg.id if reply_msg else '' }}">
       <textarea name="message" placeholder="Type message..." maxlength="1000" rows="3" class="chat-textarea" required></textarea>

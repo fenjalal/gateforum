@@ -6,6 +6,7 @@
   <div class="form-title">Secure Access</div>
   {% if error %}<div class="alert-err">{{ error }}</div>{% endif %}
   <form method="POST" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
     <div class="fg"><label>Passphrase</label>
     <input type="password" name="password" required autofocus autocomplete="current-password"></div>
     <button type="submit" class="btn btn-primary">Authenticate</button>

@@ -45,6 +45,7 @@
         {# fire ── #}
         <form method="POST"
               action="{{ url_for('post_react', post_id=post.id, reaction='fire') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
           <input type="hidden" name="next" value="{{ request.path }}">
           <button type="submit"
                   class="card-react-btn{% if 'fire' in (my_reactions or []) %} card-react-btn--on{% endif %}">
@@ -55,6 +56,7 @@
         {# bolt ── #}
         <form method="POST"
               action="{{ url_for('post_react', post_id=post.id, reaction='bolt') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
           <input type="hidden" name="next" value="{{ request.path }}">
           <button type="submit"
                   class="card-react-btn{% if 'bolt' in (my_reactions or []) %} card-react-btn--on{% endif %}">

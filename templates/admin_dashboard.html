@@ -52,6 +52,7 @@
       &#9881; Site Settings
     </summary>
     <form method="POST" action="{{ url_for('admin_settings') }}" style="padding:.8rem 0 0" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-bottom:.7rem">
         <div class="fg" style="margin:0">
           <label>Site Title</label>
@@ -82,6 +83,7 @@
   {# ── AUTHORS ── #}
   <div class="section-lbl">Author Profiles ({{ authors|length }})</div>
   <form method="POST" action="{{ url_for('author_create') }}" enctype="multipart/form-data" class="inline-form" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
     <input type="text" name="name" placeholder="Name *" maxlength="80" required class="if-input" style="flex:1;min-width:120px">
     <input type="file" name="avatar" accept=".png,.jpg,.jpeg,.gif,.webp" class="if-file">
     <select name="role_badge" class="if-input" style="min-width:110px">
@@ -106,6 +108,7 @@
         {% if a.role_badge %}<span class="role-badge role-{{ a.role_badge }}">{{ a.role_badge }}</span>{% endif %}
       </div>
       <form method="POST" action="{{ url_for('author_edit', aid=a.id) }}" enctype="multipart/form-data" class="inline-form" style="margin-top:.4rem" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <input type="text" name="name" value="{{ a.name }}" maxlength="80" class="if-input" style="flex:1;min-width:100px">
         <input type="file" name="avatar" accept=".png,.jpg,.jpeg,.gif,.webp" class="if-file">
         <select name="role_badge" class="if-input" style="min-width:100px">
@@ -119,6 +122,7 @@
       </form>
     </div>
     <form method="POST" action="{{ url_for('author_delete', aid=a.id) }}" onsubmit="return confirm('Delete author?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <button class="btn btn-danger btn-sm">Del</button>
     </form>
   </div>
@@ -155,11 +159,13 @@
       <a href="{{ url_for('post_detail', post_id=p.id) }}" class="btn btn-secondary btn-sm">View</a>
       <a href="{{ url_for('admin_edit_post', post_id=p.id) }}" class="btn btn-secondary btn-sm">Edit</a>
       <form method="POST" action="{{ url_for('admin_pin', post_id=p.id) }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <button class="btn btn-sm {% if p.pinned %}btn-accent{% else %}btn-ghost{% endif %}">
           {% if p.pinned %}Unpin{% else %}Pin{% endif %}
         </button>
       </form>
       <form method="POST" action="{{ url_for('admin_delete', post_id=p.id) }}" onsubmit="return confirm('Delete this post?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <button class="btn btn-danger btn-sm">Del</button>
       </form>
     </div>
@@ -173,6 +179,7 @@
       Generate new token ▾
     </summary>
     <form method="POST" action="{{ url_for('token_create') }}" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:.75rem;margin-bottom:.8rem" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.6rem">
         <div class="fg" style="margin:0">
           <label>Label *</label>
@@ -220,6 +227,7 @@
     <form method="POST" action="{{ url_for('token_bulk_create') }}"
           style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:.75rem"
           autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.6rem">
         <div class="fg" style="margin:0">
           <label>Count</label>
@@ -266,15 +274,18 @@
     <div class="dash-acts">
       {% if not t.revoked %}
       <form method="POST" action="{{ url_for('token_verify', tid=t.id) }}" style="display:inline">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <button class="btn btn-sm {% if t.verified %}btn-accent{% else %}btn-ghost{% endif %}" title="{% if t.verified %}Remove verified{% else %}Add verified{% endif %}">
           <svg width="12" height="12" viewBox="0 0 24 24"><path fill="currentColor" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/></svg>
         </button>
       </form>
       <form method="POST" action="{{ url_for('token_revoke', tid=t.id) }}" onsubmit="return confirm('Revoke this token?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <button class="btn btn-secondary btn-sm">Revoke</button>
       </form>
       {% endif %}
       <form method="POST" action="{{ url_for('token_delete', tid=t.id) }}" onsubmit="return confirm('Delete permanently?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <button class="btn btn-danger btn-sm">Del</button>
       </form>
     </div>

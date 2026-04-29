@@ -14,7 +14,17 @@
   
   <div class="token-reveal" style="background:rgba(39,174,96,.08);border-color:var(--green)">
     <strong style="color:var(--green)">Your Token (save it now!):</strong>
-    <code style="word-break:break-all;font-size:.78rem;display:block;margin-top:.5rem;color:var(--text-head)">{{ token }}</code>
+    <code id="tok-val" style="word-break:break-all;font-size:.78rem;display:block;margin-top:.5rem;color:var(--text-head)">{{ token }}</code>
+    <button id="copy-btn" onclick="
+      navigator.clipboard.writeText(document.getElementById('tok-val').innerText).then(function(){
+        var b=document.getElementById('copy-btn');
+        b.textContent='✓ Copied!';
+        b.style.background='var(--green)';
+        setTimeout(function(){b.textContent='Copy Key';b.style.background='';},2500);
+      });
+    " style="margin-top:.6rem;padding:.3rem .8rem;font-family:var(--mono);font-size:.68rem;font-weight:700;
+             background:var(--bg4);border:1px solid var(--border2);border-radius:4px;
+             color:var(--text-head);cursor:pointer;transition:background .15s">Copy Key</button>
   </div>
   
   <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:.9rem 1rem;margin-bottom:1.2rem">
@@ -29,7 +39,7 @@
   
   <div style="display:flex;gap:.5rem;flex-wrap:wrap">
     <a href="{{ url_for('contributor_dashboard') }}" class="btn btn-primary">Go to Dashboard</a>
-    <a href="{{ url_for('index') }}" class="btn btn-ghost">Back to Home</a>
+    <a href="{{ url_for('index') }}" class="btn btn-ghost">Go to Home Feed</a>
   </div>
 </div>
 <div></div></div>

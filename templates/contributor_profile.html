@@ -58,6 +58,7 @@
       </div>
     </div>
     <form method="POST" action="{{ url_for('firo_pay') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-primary btn-sm">Pay {{ verify_amount }} FIRO</button>
     </form>
   </div>
@@ -67,6 +68,7 @@
   {# ── Avatar upload form ── #}
   <div class="profile-section-title">Profile Image</div>
   <form method="POST" enctype="multipart/form-data" class="profile-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
     <div class="fg">
       <input type="file" name="avatar" accept="image/png,image/jpeg,image/gif,image/webp" class="file-input">
       <div class="file-hint">PNG · JPG · GIF · WEBP — appears next to your name on posts</div>

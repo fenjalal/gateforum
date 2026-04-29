@@ -58,6 +58,7 @@
       <form method="POST"
             action="{{ url_for('post_react', post_id=post.id, reaction=key) }}"
             class="react-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <button type="submit"
                 class="react-btn{% if key in my_reactions %} react-btn--on{% endif %}"
                 title="{{ label }}">
@@ -98,6 +99,7 @@
         </summary>
         <form method="POST" action="{{ url_for('post_report', post_id=post.id) }}"
               class="report-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
           <select name="reason" class="report-select">
             <option value="">Select reason…</option>
             <option value="spam">Spam</option>

@@ -10,6 +10,7 @@
   </div>
   {% if error %}<div class="alert-err">{{ error }}</div>{% endif %}
   <form method="POST" enctype="multipart/form-data" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
     <div class="fg"><label>Title *</label>
       <input type="text" name="title" required maxlength="300" value="{{ post.title }}"></div>
     <div class="fg"><label>Body *</label>

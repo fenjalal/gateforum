@@ -18,6 +18,7 @@
   {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
 
   <form method="POST" autocomplete="off" class="auth-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
     <div class="auth-field">
       <label class="auth-label">Login Key *</label>
       <div class="auth-input-wrap">

@@ -233,17 +233,35 @@ def _valid_image(data: bytes, declared: str) -> bool:
     return r == declared
 
 # ── Rate limiters ──────────────────────────────────────────────────────────
-_rl_page   = defaultdict(list)
-_rl_login  = defaultdict(list)
-_rl_search = defaultdict(list)
-_rl_upload = defaultdict(list)
-_rl_post   = defaultdict(list)   # POST flood guard
+_rl_page     = defaultdict(list)
+_rl_login    = defaultdict(list)
+_rl_search   = defaultdict(list)
+_rl_upload   = defaultdict(list)
+_rl_post     = defaultdict(list)   # POST flood guard
+_rl_register = defaultdict(list)   # registration flood guard
 
 def _chk(store, ip, limit, window) -> bool:
     now = time.time(); cut = now - window
     store[ip] = [t for t in store[ip] if t > cut]
     if len(store[ip]) >= limit: return True
     store[ip].append(now); return False
+
+# ── CSRF protection ────────────────────────────────────────────────────────
+def _csrf_token() -> str:
+    """Return (and create if missing) a per-session CSRF token."""
+    if "csrf" not in session:
+        session["csrf"] = secrets.token_hex(32)
+    return session["csrf"]
+
+def _csrf_ok() -> bool:
+    """Validate CSRF token from POST form data."""
+    expected = session.get("csrf")
+    submitted = request.form.get("_csrf", "")
+    if not expected or not submitted:
+        return False
+    return hmac.compare_digest(expected, submitted)
+
+app.jinja_env.globals["csrf_token"] = _csrf_token
 
 # ── Security headers ───────────────────────────────────────────────────────
 @app.after_request
@@ -510,6 +528,7 @@ def init_db():
             id         TEXT PRIMARY KEY,
             post_id    TEXT NOT NULL,
             ip_hash    TEXT NOT NULL,
+            token_hash TEXT NOT NULL DEFAULT '',
             reaction   TEXT NOT NULL,
             created    TEXT NOT NULL DEFAULT '',
             UNIQUE(post_id, ip_hash, reaction)
@@ -598,6 +617,7 @@ def init_db():
         ("posts", "reaction_skull",  "INTEGER NOT NULL DEFAULT 0"),
         ("posts", "reaction_eye",    "INTEGER NOT NULL DEFAULT 0"),
         ("posts", "reaction_bolt",   "INTEGER NOT NULL DEFAULT 0"),
+        ("post_reactions", "token_hash", "TEXT NOT NULL DEFAULT ''"),
     ]
     for tbl, col, defn in migs:
         try:
@@ -1019,6 +1039,18 @@ def _ip_hash() -> str:
            else hashlib.sha256(str(SECRET_KEY).encode()).hexdigest()[:16])
     return hashlib.sha256(f"{sal}:{ip}".encode()).hexdigest()[:32]
 
+def _reactor_id() -> tuple:
+    """Return (reactor_id, token_hash) for reaction deduplication.
+    - If user is logged in with a token: reactor_id = hash(token), token_hash = same
+    - If anonymous: reactor_id = ip_hash, token_hash = ''
+    Logged-in users' reactions persist across devices and IPs.
+    """
+    raw = request.cookies.get("dn_token", "")
+    if raw:
+        tok_h = hashlib.sha256(f"tok:{raw}".encode()).hexdigest()[:32]
+        return tok_h, tok_h
+    return _ip_hash(), ""
+
 
 def _reaction_counts(db, post_id: str) -> dict:
     """Always read live from post_reactions table — single source of truth."""
@@ -1038,17 +1070,26 @@ def _reaction_counts(db, post_id: str) -> dict:
 
 
 def _user_reactions_for_posts(db, post_ids: list) -> dict:
-    """Returns {post_id: set(reactions)} for current IP — used in feed."""
+    """Returns {post_id: set(reactions)} for current user — token-based if logged in, else IP."""
     if not post_ids:
         return {}
-    iph = _ip_hash()
+    reactor, tok_h = _reactor_id()
     try:
         ph   = ",".join("?" * len(post_ids))
-        rows = db.execute(
-            f"SELECT post_id, reaction FROM post_reactions "
-            f"WHERE ip_hash=? AND post_id IN ({ph}) AND reaction IN ('fire','bolt')",
-            [iph] + list(post_ids)
-        ).fetchall()
+        # If logged in: match by token_hash (works across devices)
+        # If anonymous: match by ip_hash
+        if tok_h:
+            rows = db.execute(
+                f"SELECT post_id, reaction FROM post_reactions "
+                f"WHERE token_hash=? AND post_id IN ({ph}) AND reaction IN ('fire','bolt')",
+                [tok_h] + list(post_ids)
+            ).fetchall()
+        else:
+            rows = db.execute(
+                f"SELECT post_id, reaction FROM post_reactions "
+                f"WHERE ip_hash=? AND token_hash='' AND post_id IN ({ph}) AND reaction IN ('fire','bolt')",
+                [reactor] + list(post_ids)
+            ).fetchall()
         result: dict = {}
         for r in rows:
             result.setdefault(r["post_id"], set()).add(r["reaction"])
@@ -1058,14 +1099,21 @@ def _user_reactions_for_posts(db, post_ids: list) -> dict:
 
 
 def _user_reactions(db, post_id: str) -> set:
-    """Reactions already cast by this IP on this post."""
-    iph = _ip_hash()
+    """Reactions already cast by this user on this post (token-aware)."""
+    reactor, tok_h = _reactor_id()
     try:
-        rows = db.execute(
-            "SELECT reaction FROM post_reactions "
-            "WHERE post_id=? AND ip_hash=? AND reaction IN ('fire','bolt')",
-            (post_id, iph)
-        ).fetchall()
+        if tok_h:
+            rows = db.execute(
+                "SELECT reaction FROM post_reactions "
+                "WHERE post_id=? AND token_hash=? AND reaction IN ('fire','bolt')",
+                (post_id, tok_h)
+            ).fetchall()
+        else:
+            rows = db.execute(
+                "SELECT reaction FROM post_reactions "
+                "WHERE post_id=? AND ip_hash=? AND token_hash='' AND reaction IN ('fire','bolt')",
+                (post_id, reactor)
+            ).fetchall()
         return {r["reaction"] for r in rows}
     except Exception:
         return set()
@@ -1128,43 +1176,37 @@ def post_react(post_id, reaction):
     if not re.match(r'^[a-f0-9]{32}$', post_id):
         abort(400)
 
+    if not _csrf_ok():
+        abort(403)
+
     db   = get_db()
     post = db.execute("SELECT id FROM posts WHERE id=?", (post_id,)).fetchone()
     if not post:
         abort(404)
 
-    ip_hash = _ip_hash()
+    reactor, tok_h = _reactor_id()
 
-    # Ensure table exists (idempotent)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS post_reactions (
-            id       TEXT PRIMARY KEY,
-            post_id  TEXT NOT NULL,
-            ip_hash  TEXT NOT NULL,
-            reaction TEXT NOT NULL,
-            created  TEXT NOT NULL DEFAULT '',
-            UNIQUE(post_id, ip_hash, reaction)
-        )
-    """)
-    db.commit()
-
-    existing = db.execute(
-        "SELECT id FROM post_reactions WHERE post_id=? AND ip_hash=? AND reaction=?",
-        (post_id, ip_hash, reaction)
-    ).fetchone()
+    # Look up existing reaction: token users matched by token_hash, anon by ip_hash
+    if tok_h:
+        existing = db.execute(
+            "SELECT id FROM post_reactions WHERE post_id=? AND token_hash=? AND reaction=?",
+            (post_id, tok_h, reaction)
+        ).fetchone()
+    else:
+        existing = db.execute(
+            "SELECT id FROM post_reactions WHERE post_id=? AND ip_hash=? AND token_hash='' AND reaction=?",
+            (post_id, reactor, reaction)
+        ).fetchone()
 
     if existing:
         # Toggle off
-        db.execute(
-            "DELETE FROM post_reactions WHERE post_id=? AND ip_hash=? AND reaction=?",
-            (post_id, ip_hash, reaction)
-        )
+        db.execute("DELETE FROM post_reactions WHERE id=?", (existing["id"],))
     else:
-        # Toggle on — INSERT OR IGNORE prevents duplicates from double-submit
+        # Toggle on
         db.execute(
-            "INSERT OR IGNORE INTO post_reactions (id,post_id,ip_hash,reaction,created) "
-            "VALUES (?,?,?,?,?)",
-            (uuid.uuid4().hex, post_id, ip_hash, reaction,
+            "INSERT OR IGNORE INTO post_reactions (id,post_id,ip_hash,token_hash,reaction,created) "
+            "VALUES (?,?,?,?,?,?)",
+            (uuid.uuid4().hex, post_id, reactor, tok_h, reaction,
              datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         )
     db.commit()
@@ -1376,6 +1418,10 @@ def chat_page():
     # Rate limit: 30 messages per minute
     if request.method == "POST" and _chk(_rl_post, ip, 30, 60):
         abort(429)
+
+    # CSRF check for all POST actions
+    if request.method == "POST" and not _csrf_ok():
+        abort(403)
     
     # Get current user info
     tok = _current_tok()
@@ -1568,26 +1614,32 @@ def token_login():
     ).fetchall()
     
     if request.method == "POST":
-        raw = request.form.get("token","").strip()
-        row = _get_token_row(raw)
-        if row:
-            # If this is a pool token being claimed, mark it as claimed
-            if row["is_pool"] == 1 and row["claimed"] == 0:
-                db.execute(
-                    "UPDATE tokens SET claimed=1, claimed_at=?, claimed_by=? WHERE id=?",
-                    (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-                     request.remote_addr or "unknown", 
-                     row["id"])
-                )
-                db.commit()
-                log_action("token_claimed", f"Pool token '{row['label']}' claimed")
-            
-            resp = make_response(redirect(url_for("contributor_dashboard")))
-            resp.set_cookie("dn_token", raw, max_age=7200,
-                            httponly=True, samesite="Lax", secure=False)
-            return resp
-        time.sleep(1)
-        error = "Invalid or revoked token."
+        ip = request.remote_addr or "unknown"
+        if _chk(_rl_login, ip, 5, 300):
+            error = "Too many attempts. Please wait 5 minutes."
+        elif not _csrf_ok():
+            error = "Invalid form submission. Please refresh and try again."
+        else:
+            raw = request.form.get("token","").strip()
+            row = _get_token_row(raw)
+            if row:
+                # If this is a pool token being claimed, mark it as claimed
+                if row["is_pool"] == 1 and row["claimed"] == 0:
+                    db.execute(
+                        "UPDATE tokens SET claimed=1, claimed_at=?, claimed_by=? WHERE id=?",
+                        (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                         ip,
+                         row["id"])
+                    )
+                    db.commit()
+                    log_action("token_claimed", f"Pool token '{row['label']}' claimed")
+
+                resp = make_response(redirect(url_for("contributor_dashboard")))
+                resp.set_cookie("dn_token", raw, max_age=7776000,
+                                httponly=True, samesite="Lax", secure=False)
+                return resp
+            time.sleep(1)
+            error = "Invalid or revoked token."
     return render_template("token_login.html", error=error, pool_tokens=pool_tokens)
 
 def _captcha_sign(answer: str) -> str:
@@ -1714,50 +1766,56 @@ def self_register():
     error = None
 
     if request.method == "POST":
-        captcha_input = request.form.get("captcha_input", "").strip().upper()
-        captcha_token = request.form.get("captcha_token", "").strip()
-        display_name  = request.form.get("display_name", "").strip()
-
-        cap_ok, cap_err = _captcha_verify(captcha_token, captcha_input)
-        if not cap_ok:
-            error = cap_err
-        elif not display_name or len(display_name) < 2:
-            error = "Name must be at least 2 characters."
-        elif len(display_name) > 40:
-            error = "Name too long (max 40 characters)."
-        elif re.search(r'[<>&"\']', display_name):
-            error = "Name contains invalid characters."
+        ip = request.remote_addr or "unknown"
+        if _chk(_rl_register, ip, 5, 600):
+            error = "Too many registration attempts. Please wait a few minutes."
+        elif not _csrf_ok():
+            error = "Invalid form submission. Please refresh and try again."
         else:
-            taken = db.execute(
-                "SELECT id FROM tokens WHERE claimed_name=? UNION "
-                "SELECT id FROM authors WHERE name=?",
-                (display_name, display_name)
-            ).fetchone()
-            if taken:
-                error = "That name is already taken — choose another."
+            captcha_input = request.form.get("captcha_input", "").strip().upper()
+            captcha_token = request.form.get("captcha_token", "").strip()
+            display_name  = request.form.get("display_name", "").strip()
+
+            cap_ok, cap_err = _captcha_verify(captcha_token, captcha_input)
+            if not cap_ok:
+                error = cap_err
+            elif not display_name or len(display_name) < 2:
+                error = "Name must be at least 2 characters."
+            elif len(display_name) > 40:
+                error = "Name too long (max 40 characters)."
+            elif re.search(r'[<>&"\']', display_name):
+                error = "Name contains invalid characters."
             else:
-                raw      = secrets.token_urlsafe(32)
-                tok_id   = uuid.uuid4().hex
-                tok_hash = _hash_token(raw)
-                now_str  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                taken = db.execute(
+                    "SELECT id FROM tokens WHERE claimed_name=? UNION "
+                    "SELECT id FROM authors WHERE name=?",
+                    (display_name, display_name)
+                ).fetchone()
+                if taken:
+                    error = "That name is already taken — choose another."
+                else:
+                    raw      = secrets.token_urlsafe(32)
+                    tok_id   = uuid.uuid4().hex
+                    tok_hash = _hash_token(raw)
+                    now_str  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                db.execute(
-                    "INSERT INTO tokens "
-                    "(id, label, token_hash, allowed_roles, note, author_id, default_role, "
-                    " is_pool, pool_token, created, revoked, claimed, claimed_at, claimed_by, "
-                    " claimed_name, verified) "
-                    "VALUES (?,?,?,?,?,?,?,0,'',?,0,1,?,?,?,0)",
-                    (tok_id, display_name, tok_hash, "", "self-registered", "", "",
-                     now_str, now_str, request.remote_addr or "unknown",
-                     display_name)
-                )
-                db.commit()
-                log_action("self_register", f"New account: {display_name}")
+                    db.execute(
+                        "INSERT INTO tokens "
+                        "(id, label, token_hash, allowed_roles, note, author_id, default_role, "
+                        " is_pool, pool_token, created, revoked, claimed, claimed_at, claimed_by, "
+                        " claimed_name, verified) "
+                        "VALUES (?,?,?,?,?,?,?,0,'',?,0,1,?,?,?,0)",
+                        (tok_id, display_name, tok_hash, "", "self-registered", "", "",
+                         now_str, now_str, request.remote_addr or "unknown",
+                         display_name)
+                    )
+                    db.commit()
+                    log_action("self_register", f"New account: {display_name}")
 
-                resp = make_response(redirect(url_for("contributor_dashboard")))
-                resp.set_cookie("dn_token", raw, max_age=7776000,
-                                httponly=True, samesite="Lax", secure=False)
-                return resp
+                    session["claimed_token"]       = raw
+                    session["claimed_token_label"] = display_name
+                    session["claimed_token_name"]  = display_name
+                    return redirect(url_for("token_claimed"))
 
     return render_template("register.html", error=error)
 
@@ -2261,8 +2319,11 @@ def contributor_profile():
     success = None
     
     if request.method == "POST":
+        if not _csrf_ok():
+            error = "Invalid form submission. Please refresh and try again."
+            return render_template("contributor_profile.html", tok_row=tok, error=error, success=None, verify_amount=FIROGATE_VERIFY_AMOUNT)
         avatar_file = request.files.get("avatar")
-        
+
         if avatar_file and avatar_file.filename:
             allowed = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
             ext = avatar_file.filename.rsplit('.', 1)[-1].lower() if '.' in avatar_file.filename else ''
@@ -2343,6 +2404,7 @@ def new_post():
     error = None
 
     if request.method == "POST":
+        if not _csrf_ok(): abort(403)
         title = request.form.get("title","").strip()
         body  = request.form.get("body","").strip()
         files = request.files.getlist("images")
@@ -2424,6 +2486,8 @@ def admin_login():
     if request.method == "POST":
         if _chk(_rl_login, ip, 5, 300):
             error = "Too many attempts. Wait 5 minutes."
+        elif not _csrf_ok():
+            error = "Invalid form submission. Please refresh and try again."
         elif check_admin_password(request.form.get("password","")):
             session.permanent = True; session["admin"] = True
             log_action("admin_login", "success")
@@ -2536,6 +2600,7 @@ def admin_delete_reported(report_id, post_id):
 @app.route(f"/{ADMIN_PREFIX}/delete/<post_id>", methods=["POST"])
 @require_admin
 def admin_delete(post_id):
+    if not _csrf_ok(): abort(403)
     db   = get_db()
     post = db.execute("SELECT * FROM posts WHERE id=?", (post_id,)).fetchone()
     if post:
@@ -2548,6 +2613,7 @@ def admin_delete(post_id):
 @app.route(f"/{ADMIN_PREFIX}/pin/<post_id>", methods=["POST"])
 @require_admin
 def admin_pin(post_id):
+    if not _csrf_ok(): abort(403)
     db   = get_db()
     post = db.execute("SELECT pinned FROM posts WHERE id=?", (post_id,)).fetchone()
     if post:
@@ -2565,6 +2631,7 @@ def admin_edit_post(post_id):
     authors = db.execute("SELECT * FROM authors ORDER BY name").fetchall()
     error   = None
     if request.method == "POST":
+        if not _csrf_ok(): abort(403)
         title     = request.form.get("title","").strip()
         body      = request.form.get("body","").strip()
         role      = request.form.get("role","")
@@ -2603,6 +2670,7 @@ def admin_edit_post(post_id):
 @app.route(f"/{ADMIN_PREFIX}/settings", methods=["POST"])
 @require_admin
 def admin_settings():
+    if not _csrf_ok(): abort(403)
     set_setting("site_title",    request.form.get("site_title","GateForum").strip()[:60] or "GateForum")
     set_setting("site_tagline",  request.form.get("site_tagline","").strip()[:120])
     set_setting("posts_per_page",request.form.get("posts_per_page","10").strip())
@@ -2614,6 +2682,7 @@ def admin_settings():
 @app.route(f"/{ADMIN_PREFIX}/authors/create", methods=["POST"])
 @require_admin
 def author_create():
+    if not _csrf_ok(): abort(403)
     name = request.form.get("name","").strip()[:80]
     if not name: return redirect(url_for("admin_dashboard"))
     db = get_db()
@@ -2635,6 +2704,7 @@ def author_create():
 @app.route(f"/{ADMIN_PREFIX}/authors/edit/<aid>", methods=["POST"])
 @require_admin
 def author_edit(aid):
+    if not _csrf_ok(): abort(403)
     db = get_db()
     a  = db.execute("SELECT * FROM authors WHERE id=?", (aid,)).fetchone()
     if not a: abort(404)
@@ -2658,6 +2728,7 @@ def author_edit(aid):
 @app.route(f"/{ADMIN_PREFIX}/authors/delete/<aid>", methods=["POST"])
 @require_admin
 def author_delete(aid):
+    if not _csrf_ok(): abort(403)
     db = get_db()
     a  = db.execute("SELECT * FROM authors WHERE id=?", (aid,)).fetchone()
     if a:
@@ -2672,6 +2743,7 @@ def author_delete(aid):
 @app.route(f"/{ADMIN_PREFIX}/tokens/create", methods=["POST"])
 @require_admin
 def token_create():
+    if not _csrf_ok(): abort(403)
     label        = request.form.get("label","").strip()[:80] or "Contributor"
     note         = request.form.get("note","").strip()[:200]
     author_id    = request.form.get("author_id","").strip()
@@ -2702,6 +2774,7 @@ def token_create():
 @require_admin
 def token_bulk_create():
     """Generate 10/25/50/100 pool tokens at once with auto-labels."""
+    if not _csrf_ok(): abort(403)
     try:
         count = int(request.form.get("count", 10))
     except (ValueError, TypeError):
@@ -2811,7 +2884,7 @@ def token_claimed():
                                           token=claimed_token, 
                                           label=claimed_label,
                                           display_name=claimed_name))
-    resp.set_cookie("dn_token", claimed_token, max_age=7200,
+    resp.set_cookie("dn_token", claimed_token, max_age=7776000,
                     httponly=True, samesite="Lax", secure=False)
     
     # Clear from session after showing
@@ -2824,6 +2897,7 @@ def token_claimed():
 @app.route(f"/{ADMIN_PREFIX}/tokens/revoke/<tid>", methods=["POST"])
 @require_admin
 def token_revoke(tid):
+    if not _csrf_ok(): abort(403)
     db = get_db()
     db.execute("UPDATE tokens SET revoked=1 WHERE id=?", (tid,))
     db.commit()
@@ -2834,6 +2908,7 @@ def token_revoke(tid):
 @require_admin
 def token_verify(tid):
     """Toggle verified badge for a token."""
+    if not _csrf_ok(): abort(403)
     db = get_db()
     token = db.execute("SELECT verified FROM tokens WHERE id=?", (tid,)).fetchone()
     if token:
@@ -2846,6 +2921,7 @@ def token_verify(tid):
 @app.route(f"/{ADMIN_PREFIX}/tokens/delete/<tid>", methods=["POST"])
 @require_admin
 def token_delete(tid):
+    if not _csrf_ok(): abort(403)
     db = get_db()
     db.execute("DELETE FROM tokens WHERE id=?", (tid,))
     db.commit()
