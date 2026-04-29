@@ -1,8 +1,8 @@
-# Sonet — Full Technical Details
+# Open-source Forum — Full Technical Details
 
 ## What It Is
 
-Sonet is a self-hosted anonymous publishing platform. There are no user accounts in the traditional sense — each user gets a secret token key at registration which acts as their identity. No emails, no passwords, no IP logs stored in user records.
+Open-source Forum is a self-hosted anonymous publishing platform. There are no user accounts in the traditional sense — each user gets a secret token key at registration which acts as their identity. No emails, no passwords, no IP logs stored in user records.
 
 ---
 
@@ -90,7 +90,7 @@ Sonet is a self-hosted anonymous publishing platform. There are no user accounts
 
 ## Payments / Verified Badge
 
-Sonet integrates with **LavaPay** (FiroGate) for Firo cryptocurrency payments. When a contributor pays the configured `FIROGATE_VERIFY_AMOUNT` in Firo, they receive a verified badge (✓) displayed on all their posts and their profile.
+Open-source Forum integrates with **LavaPay** (FiroGate) for Firo cryptocurrency payments. When a contributor pays the configured `FIROGATE_VERIFY_AMOUNT` in Firo, they receive a verified badge (✓) displayed on all their posts and their profile.
 
 - Payment flow: `/verify` → generate address → poll for confirmation → badge granted
 - Timeout: configurable via `FIROGATE_TIMEOUT_MIN` (default 20 min)

@@ -1,4 +1,4 @@
-# Sonet
+# Open-source Forum
 
 Self-hosted anonymous publishing platform built with Flask + SQLite. Users register with a token key, post articles, and react — no emails, no tracking. Open-source, run it anywhere.
 
@@ -18,8 +18,8 @@ pip install flask pillow
 ## Install
 
 ```bash
-git clone https://github.com/yourname/sonet.git
-cd sonet
+git clone https://github.com/fenjalal/getaforum.git
+cd gateforum
 pip install flask pillow
 python app.py
 ```
@@ -94,7 +94,7 @@ No manual SQL needed — schema migrations are handled on every boot.
 
 1. Install Tor, add to `torrc`:
    ```
-   HiddenServiceDir /var/lib/tor/sonet/
+   HiddenServiceDir /var/lib/tor/forum/
    HiddenServicePort 80 127.0.0.1:5000
    ```
 2. Set `FIROGATE_USE_TOR=1` and optionally `FIROGATE_ONION_URL` if your payment gateway has an onion address.
@@ -109,7 +109,7 @@ static/
   uploads/          Post images
   avatars/          User avatars
 templates/          Jinja2 HTML templates
-sonet.db            SQLite database (auto-created)
+forum.db            SQLite database (auto-created)
 ```
 
 ---
