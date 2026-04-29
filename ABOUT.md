@@ -1,73 +1,108 @@
-# gateforum — Full Technical Details
+# GateForum — Technical Details
 
 ## What It Is
 
-gateforum is a self-hosted anonymous publishing platform. There are no user accounts in the traditional sense — each user gets a secret token key at registration which acts as their identity. No emails, no passwords, no IP logs stored in user records.
+GateForum is a self-hosted anonymous publishing platform. Contributors get a secret token key instead of a username/password. No emails, no phone numbers, no IP logs in user records. Designed to run on Tor hidden services and clearnet simultaneously with zero config changes.
+
+Verified badges are granted via a one-time Firo (FIRO) cryptocurrency payment processed through FiroGate.
 
 ---
 
 ## Architecture
 
-- **Backend:** Python / Flask with DB-backed server-side sessions (no cookie bloat)
-- **Database:** SQLite — single file, zero config
-- **Frontend:** Server-rendered Jinja2 templates, minimal JS
-- **Auth:** Token-based (HMAC-hashed, stored as bcrypt-equivalent hash in DB)
-- **Sessions:** Custom `_DbSession` — session data lives in `flask_sessions` table, browser only holds a session ID cookie
+| Layer | Tech |
+|---|---|
+| Backend | Python 3.10+ / Flask 3.0+ |
+| Database | SQLite (single file, zero config) |
+| Frontend | Server-rendered Jinja2, minimal JS |
+| Sessions | DB-backed — cookie holds only a 64-byte random session ID |
+| Auth | HMAC-hashed tokens stored in DB |
+| Payments | FiroGate API (Firo cryptocurrency) |
+| CAPTCHA | Self-hosted math CAPTCHA, HMAC-signed — no external service |
 
 ---
 
 ## Features
 
 ### Posts
-- Rich markdown body with image uploads (multi-image per post)
+- Markdown: bold, italic, code blocks, headings, auto-links
+- Up to 6 images per post, shown in responsive grid
 - Author profiles with avatars and role badges
 - Pinning, view counter, read-time estimate
 - RSS feed at `/feed.xml`
-- Admin edit/delete
+- Admin: edit, delete, pin any post
 
 ### Reactions
-- Two reactions: 🔥 Fire and ⚡ Bolt
-- Logged-in users: tracked by token hash — persists across all devices
-- Anonymous users: tracked by hashed IP — session-local
-- Counts stored in `post_reactions` table (never denormalized into posts columns)
+- Two reactions: Fire 🔥 and Bolt ⚡
+- **Logged-in users:** tracked by token hash — persists across all devices and IPs
+- **Anonymous users:** tracked by hashed IP
+- Counts stored in `post_reactions` table only — never denormalized into posts
 
-### Users / Tokens
-- Self-registration with CAPTCHA (math-based, HMAC-signed)
-- Token shown **once** at registration with a Copy button — never shown again
-- Verified badge (✓) purchasable via Firo payment (gateforum/FiroGate integration)
-- Admin can manually toggle verified status per token
-- Pool tokens: pre-generated invite tokens the admin can distribute
-- Token roles: contributor role badge shown on posts and profiles
+### Users & Tokens
+- Self-registration at `/register` with math CAPTCHA
+- Token shown **once** at registration with a one-click Copy button
+- Verified badge (✓) granted after FiroGate payment or manually by admin
+- Admin can bulk-generate pool tokens (10 / 25 / 50 / 100 at once)
+- Role badges: Reporter · Editor · Analyst · Hacktivist · Moderator · and more
+- Token revocation: instant, no recovery
 
 ### Chat
-- Anonymous real-time chat (polling-based, no websockets)
+- Anonymous, polling-based (no WebSockets)
 - Nickname setting per session
 - Rate-limited: 30 messages/minute
 - Reply-to support
 
 ### Admin Panel
-- Hidden URL (`/{PREFIX}/{SUFFIX}`) — configure both via env vars
-- Post management: create, edit, delete, pin
-- Author management: create/edit authors with avatars and role badges
-- Token management: create, bulk-create, revoke, verify, delete
-- Site settings: title, tagline, posts per page, maintenance mode
-- Reports queue: user-reported posts with one-click delete
+- Hidden URL: `/{DNet_ADMIN_PREFIX}/{DNet_ADMIN_SUFFIX}`
+- Posts: create, edit, delete, pin (up to 3 pinned)
+- Authors: create/edit/delete with avatars and role badges
+- Tokens: create, bulk-create, revoke, verify toggle, delete
+- Settings: site title, tagline, posts per page, maintenance mode
+- Reports queue: user-reported posts with one-click resolve/delete
+- Full audit log of all admin actions
 
-### Security
-- CSRF protection on all POST forms (per-session HMAC token)
-- Rate limiting: login (5/5min), register (5/10min), chat (30/min), search
-- No IP addresses stored in user-facing tables
-- `httponly` + `samesite=Lax` cookies
-- Content Security Policy headers on all responses
-- Admin password stored as PBKDF2-SHA256 hash
-- All file uploads: type-checked, path-traversal-protected, size-limited (10MB images, 2MB avatars)
+---
 
-### Privacy
-- No email collection
-- No external CDN or analytics
-- Full Tor support — routes payment API calls via SOCKS5 proxy
-- Onion address support for FiroGate integration
-- Open-source — audit everything
+## Security
+
+| Protection | Details |
+|---|---|
+| CSRF | Per-session HMAC token on every POST form |
+| Rate limiting | 5/5min login · 5/10min register · 30/min chat · in-memory, no Redis |
+| UA blocking | sqlmap, nikto, nmap, curl/wget scanners and 15+ patterns |
+| Path blocking | `/.env` · `/.git` · `/wp-admin` · `/phpmyadmin` · 20+ paths |
+| XSS | All user content HTML-escaped before markdown processing |
+| Webhook HMAC | SHA-256 signature + timestamp + nonce replay protection |
+| CSP | Per-route Content-Security-Policy on every response |
+| Headers | `X-Frame-Options: DENY` · `Referrer-Policy: no-referrer` |
+| File validation | Magic bytes checked — not just extension |
+| Cookie | `httponly` + `samesite=Lax` + 90-day expiry |
+| Tor-aware | Header anomaly detection skips Tor Browser fingerprints |
+
+---
+
+## Verified Badge & FiroGate
+
+GateForum uses **FiroGate** as a privacy-preserving Firo (FIRO) payment gateway.
+FiroGate developed by fenjalal the code will release soon as open-source 
+Flow:
+1. User clicks "Pay to Verify"
+2. Backend creates a payment via FiroGate API
+3. User pays the configured FIRO amount to the generated address
+4. FiroGate sends a webhook to `/webhook/firogate`
+5. Backend verifies HMAC signature → grants badge
+6. Badge is permanent in DB — admin can also grant/revoke manually
+
+Configure in `.env`:
+```env
+FIROGATE_API_KEY=...
+FIROGATE_WEBHOOK_SECRET=...
+FIROGATE_VERIFY_AMOUNT=1.99
+FIROGATE_BASE_URL=https://api.firogate.com
+FIROGATE_ONION_URL=http://...onion   # for Tor sites
+FIROGATE_USE_TOR=1                   # route API calls via Tor
+FIROGATE_TOR_PROXY=socks5h://127.0.0.1:9050
+```
 
 ---
 
@@ -76,42 +111,31 @@ gateforum is a self-hosted anonymous publishing platform. There are no user acco
 | Table | Purpose |
 |---|---|
 | `posts` | Articles with metadata |
-| `authors` | Author profiles (name, avatar, badge) |
-| `tokens` | User access tokens |
-| `post_reactions` | Fire/bolt reactions (token-aware) |
+| `authors` | Author profiles (name, avatar, role badge) |
+| `tokens` | Contributor access tokens |
+| `post_reactions` | Fire/bolt reactions (token-aware across devices) |
 | `post_reports` | User reports queue |
 | `chat` | Chat messages |
 | `firo_payments` | Pending verification payments |
 | `settings` | Site-wide key/value config |
 | `flask_sessions` | Server-side session storage |
-| `action_log` | Admin action audit log |
-
----
-
-## Payments / Verified Badge
-
-gateforum integrates with **gateforum** (FiroGate) for Firo cryptocurrency payments. When a contributor pays the configured `FIROGATE_VERIFY_AMOUNT` in Firo, they receive a verified badge (✓) displayed on all their posts and their profile.
-
-- Payment flow: `/verify` → generate address → poll for confirmation → badge granted
-- Timeout: configurable via `FIROGATE_TIMEOUT_MIN` (default 20 min)
-- Tor-compatible: set `FIROGATE_USE_TOR=1` for full onion routing
-
----
-
-## CAPTCHA System
-
-Math-based CAPTCHA (e.g. "7 + 4 = ?") with HMAC-signed tokens. No external service. Tokens expire after 10 minutes. Used on registration and the old like system.
+| `action_log` | Admin audit log |
 
 ---
 
 ## Migrations
 
-Schema migrations run automatically on every startup. Adding a new column: just add it to the `migs` list in `init_db()`. Safe to run on existing databases — uses `ALTER TABLE ... ADD COLUMN` with `try/except` for idempotency.
+Schema migrations run automatically on every startup via `init_db()`. Uses `ALTER TABLE ... ADD COLUMN` inside `try/except` — safe on existing databases.
+
+For manual repair or one-off migrations, run:
+```bash
+python3 migrate.py
+```
 
 ---
 
 ## Known Limitations
 
-- SQLite: fine for low-to-medium traffic. For high concurrency, swap to PostgreSQL (requires adapter changes).
-- No WebSockets: chat uses polling. Works but not real-time.
-- Single process by default: use gunicorn with 2-4 workers max for SQLite safety.
+- **SQLite:** fine for low-to-medium traffic. High concurrency → swap to PostgreSQL.
+- **Chat polling:** not real-time — 3-second poll interval.
+- **Gunicorn workers:** keep at 2–4 max with SQLite to avoid write contention.

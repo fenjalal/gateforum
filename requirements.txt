@@ -6,6 +6,7 @@ gunicorn>=21.0.0
 markupsafe>=2.1.0
 pillow>=10.0.0
 requests>=2.31.0
-# Optional: required only when FIROGATE_USE_TOR=1 or FIROGATE_ONION_URL is set
+
+# Required for Tor support (FIROGATE_USE_TOR=1 or FIROGATE_ONION_URL set)
 # pip install requests[socks]
 # PySocks>=1.7.1
