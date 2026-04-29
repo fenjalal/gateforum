@@ -16,7 +16,7 @@
     <div class="header-inner">
       <a href="{{ url_for('index') }}" class="site-logo">
        <svg width="20" height="20" viewBox="0 0 20 20"><path fill="currentColor" d="M15 2H5L4 8h12zM0 10s2 1 10 1s10-1 10-1l-4-2H4zm8 4h4v1H8z"/><circle cx="6" cy="15" r="3" fill="currentColor"/><circle cx="14" cy="15" r="3" fill="currentColor"/></svg>
-        <span class="die">{{ site_title.split()[0] if site_title else 'Die' }}</span>{{ site_title.split()[1] if site_title.split()|length > 1 else 'Net' }}
+        <span class="die">{{ site_title.split()[0] if site_title else 'Die' }}</span>{{ site_title.split()[1] if site_title.split()|length > 1 else 'Forum' }}
       </a>
       <form class="header-search" method="GET" action="{{ url_for('search') }}">
         <input type="text" name="q" placeholder="Search…" maxlength="200" autocomplete="off" class="hs-input">
