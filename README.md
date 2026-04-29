@@ -1,4 +1,4 @@
-# Open-source Forum
+# gateforum
 
 Self-hosted anonymous publishing platform built with Flask + SQLite. Users register with a token key, post articles, and react — no emails, no tracking. Open-source, run it anywhere.
 
@@ -63,7 +63,7 @@ Create a `.env` file or export before running:
 | `DNet_ADMIN_PREFIX` | `ctrl9x4mQ7wZ2pL` | Admin URL prefix |
 | `DNet_ADMIN_SUFFIX` | `auth8nK3vR6hJ1sT` | Admin URL suffix |
 | `ADMIN_PASSWORD_HASH` | *(required)* | bcrypt hash of admin password |
-| `FIROGATE_API_KEY` | — | LavaPay/FiroGate API key (optional) |
+| `FIROGATE_API_KEY` | — | gateforum/FiroGate API key (optional) |
 | `FIROGATE_WEBHOOK_SECRET` | — | Webhook secret |
 | `FIROGATE_BASE_URL` | `https://api.firogate.com` | API base URL |
 | `FIROGATE_VERIFY_AMOUNT` | `3.99` | Firo amount required for verified badge |

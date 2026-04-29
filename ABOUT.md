@@ -1,8 +1,8 @@
-# Open-source Forum — Full Technical Details
+# gateforum — Full Technical Details
 
 ## What It Is
 
-Open-source Forum is a self-hosted anonymous publishing platform. There are no user accounts in the traditional sense — each user gets a secret token key at registration which acts as their identity. No emails, no passwords, no IP logs stored in user records.
+gateforum is a self-hosted anonymous publishing platform. There are no user accounts in the traditional sense — each user gets a secret token key at registration which acts as their identity. No emails, no passwords, no IP logs stored in user records.
 
 ---
 
@@ -34,7 +34,7 @@ Open-source Forum is a self-hosted anonymous publishing platform. There are no u
 ### Users / Tokens
 - Self-registration with CAPTCHA (math-based, HMAC-signed)
 - Token shown **once** at registration with a Copy button — never shown again
-- Verified badge (✓) purchasable via Firo payment (LavaPay/FiroGate integration)
+- Verified badge (✓) purchasable via Firo payment (gateforum/FiroGate integration)
 - Admin can manually toggle verified status per token
 - Pool tokens: pre-generated invite tokens the admin can distribute
 - Token roles: contributor role badge shown on posts and profiles
@@ -90,7 +90,7 @@ Open-source Forum is a self-hosted anonymous publishing platform. There are no u
 
 ## Payments / Verified Badge
 
-Open-source Forum integrates with **LavaPay** (FiroGate) for Firo cryptocurrency payments. When a contributor pays the configured `FIROGATE_VERIFY_AMOUNT` in Firo, they receive a verified badge (✓) displayed on all their posts and their profile.
+gateforum integrates with **gateforum** (FiroGate) for Firo cryptocurrency payments. When a contributor pays the configured `FIROGATE_VERIFY_AMOUNT` in Firo, they receive a verified badge (✓) displayed on all their posts and their profile.
 
 - Payment flow: `/verify` → generate address → poll for confirmation → badge granted
 - Timeout: configurable via `FIROGATE_TIMEOUT_MIN` (default 20 min)
