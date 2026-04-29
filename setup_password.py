@@ -1,74 +1,63 @@
-import os, sys
-from cryptography.fernet import Fernet
+import os, sys, hashlib, secrets
 from dotenv import dotenv_values
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 ENV_FILE = os.path.join(BASE_DIR, ".env")
 
+ITERATIONS = 600_000   # OWASP 2024 recommendation for PBKDF2-SHA256
+
+def pbkdf2_hash(pw: str) -> str:
+    salt = secrets.token_bytes(32)
+    dk   = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, ITERATIONS)
+    return f"pbkdf2${ITERATIONS}${salt.hex()}${dk.hex()}"
+
 def main():
     print("=" * 50)
-    print("  DNet — Admin Password Setup")
+    print("  GateForum — Admin Password Setup")
     print("=" * 50)
+    print()
 
-    # Load existing .env if present
+    # Load existing .env
     existing = dotenv_values(ENV_FILE) if os.path.exists(ENV_FILE) else {}
 
-    # Get or generate Fernet key
-    fernet_key = existing.get("DNet_FERNET_KEY", "")
-    if not fernet_key:
-        fernet_key = Fernet.generate_key().decode()
-        print(f"[+] Generated new Fernet key")
-    else:
-        print(f"[=] Using existing Fernet key")
+    # Warn if old Fernet keys exist
+    if existing.get("DNet_FERNET_KEY") or existing.get("DNet_ADMIN_BLOB"):
+        print("[!] Old Fernet keys found (DNet_FERNET_KEY / DNet_ADMIN_BLOB).")
+        print("    These will be removed — Fernet has been replaced with PBKDF2.")
+        print()
 
-    f = Fernet(fernet_key.encode())
-
-    # Get admin password from user
-    print()
+    # Get password
     while True:
-        pw  = input("Enter new admin password (min 12 chars): ").strip()
-        pw2 = input("Confirm password: ").strip()
+        try:
+            pw  = input("Enter new admin password (min 12 chars): ").strip()
+            pw2 = input("Confirm password: ").strip()
+        except KeyboardInterrupt:
+            print("\nAborted.")
+            sys.exit(1)
         if pw != pw2:
-            print("  Passwords do not match. Try again.\n")
-            continue
+            print("  Passwords do not match.\n"); continue
         if len(pw) < 12:
-            print("  Password too short (min 12 chars). Try again.\n")
-            continue
+            print("  Password too short (min 12 chars).\n"); continue
         break
 
-    # Encrypt password
-    blob = f.encrypt(pw.encode()).decode()
-    print(f"\n[+] Password encrypted with Fernet")
+    admin_hash = pbkdf2_hash(pw)
+    print(f"\n[+] Password hashed with PBKDF2-HMAC-SHA256 ({ITERATIONS:,} iterations)")
 
-    # Preserve existing env values, update/add ours
+    # Rebuild .env preserving existing keys, removing Fernet junk
+    SKIP_KEYS = {"DNet_FERNET_KEY", "DNet_ADMIN_BLOB", "DNet_ADMIN_HASH"}
     lines = []
-    keys_written = set()
-
     if os.path.exists(ENV_FILE):
         with open(ENV_FILE) as fh:
             for line in fh:
-                stripped = line.strip()
-                if not stripped or stripped.startswith("#"):
-                    lines.append(line.rstrip())
-                    continue
-                if "=" in stripped:
-                    k = stripped.split("=", 1)[0]
-                    if k == "DNet_FERNET_KEY":
-                        lines.append(f"DNet_FERNET_KEY={fernet_key}")
-                        keys_written.add(k)
-                    elif k == "DNet_ADMIN_BLOB":
-                        lines.append(f"DNet_ADMIN_BLOB={blob}")
-                        keys_written.add(k)
-                    else:
-                        lines.append(line.rstrip())
-                else:
+                s = line.strip()
+                if not s or s.startswith("#"):
+                    lines.append(line.rstrip()); continue
+                k = s.split("=", 1)[0] if "=" in s else ""
+                if k not in SKIP_KEYS:
                     lines.append(line.rstrip())
 
-    # Append any not yet written
-    if "DNet_FERNET_KEY" not in keys_written:
-        lines.append(f"DNet_FERNET_KEY={fernet_key}")
-    if "DNet_ADMIN_BLOB" not in keys_written:
-        lines.append(f"DNet_ADMIN_BLOB={blob}")
+    # Add new hash
+    lines.append(f"DNet_ADMIN_HASH={admin_hash}")
 
     # Add defaults if .env is new
     if not os.path.exists(ENV_FILE):
@@ -78,7 +67,7 @@ def main():
             "DNet_ADMIN_PREFIX=ctrl9x4mQ7wZ2pL",
             "DNet_ADMIN_SUFFIX=auth8nK3vR6hJ1sT",
             "",
-            "# Gunicorn bind (leave as-is for Tor)",
+            "# Gunicorn bind",
             "DNet_HOST=127.0.0.1",
             "DNet_PORT=5000",
         ]
@@ -87,13 +76,13 @@ def main():
         fh.write("\n".join(lines) + "\n")
     os.chmod(ENV_FILE, 0o600)
 
-    print(f"[+] .env written to: {ENV_FILE}")
+    print(f"[+] .env updated: {ENV_FILE}")
     print()
     print("  Next steps:")
-    print("    1. Edit .env to set custom ADMIN_PREFIX and ADMIN_SUFFIX")
+    print("    1. Edit .env — set custom ADMIN_PREFIX and ADMIN_SUFFIX")
     print("    2. Run: bash start.sh")
     print()
-    print("  ⚠  Keep .env secret — it contains your encryption key!")
+    print("  The hash is one-way — even if .env leaks, password cannot be recovered.")
 
 if __name__ == "__main__":
     main()
