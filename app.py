@@ -296,7 +296,7 @@ def _sec(r):
     h.pop("X-Powered-By", None)
 
     if "/static/uploads/" in p or "/static/avatars/" in p:
-        h["Cache-Control"] = "public, max-age=300"
+        h["Cache-Control"] = "private, no-store"
     elif "/static/css/" in p or "/static/fonts/" in p:
         h["Cache-Control"] = "public, max-age=86400"
     else:
@@ -792,6 +792,25 @@ def _save_file(data: bytes, ext: str, folder: str, prefix: str = "") -> str | No
     open(dest, "wb").write(data)
     return name
 
+def process_post_image(data: bytes) -> bytes:
+    """Strip ALL metadata, re-encode as JPEG — post images."""
+    Image.MAX_IMAGE_PIXELS = 20_000_000   # ~4472x4472 — prevents decompression bombs
+    img = Image.open(io.BytesIO(data))
+    if img.mode in ("RGBA", "P", "LA"):
+        bg  = Image.new("RGB", img.size, (0, 0, 0))
+        src = img.convert("RGBA") if img.mode == "P" else img
+        mask = src.split()[-1] if src.mode in ("RGBA", "LA") else None
+        bg.paste(src.convert("RGB"), mask=mask)
+        img = bg
+    elif img.mode != "RGB":
+        img = img.convert("RGB")
+    # Cap dimensions — 2048px max
+    if img.width > 2048 or img.height > 2048:
+        img.thumbnail((2048, 2048), Image.LANCZOS)
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=82, optimize=True, progressive=True)
+    return out.getvalue()
+
 def save_images(files: list) -> list:
     ip = request.remote_addr or "unknown"
     saved = []
@@ -804,12 +823,17 @@ def save_images(files: list) -> list:
         data = f.read(app.config["SINGLE_IMAGE_MAX"]+1)
         if len(data) > app.config["SINGLE_IMAGE_MAX"]: continue
         if not _valid_image(data, ext): continue
-        name = _save_file(data, ext, app.config["UPLOAD_FOLDER"])
+        try:
+            clean = process_post_image(data)     # strip EXIF, re-encode as JPEG
+        except Exception:
+            continue                              # corrupt / decompression bomb
+        name = _save_file(clean, "jpg", app.config["UPLOAD_FOLDER"])
         if name: saved.append(name)
     return saved
 
 def process_avatar_image(data: bytes) -> bytes:
     """Strip metadata, resize to max 400×400, return JPEG bytes at quality 78."""
+    Image.MAX_IMAGE_PIXELS = 20_000_000
     img = Image.open(io.BytesIO(data))
     if img.mode in ("RGBA", "P", "LA"):
         bg = Image.new("RGB", img.size, (0, 0, 0))
@@ -1326,6 +1350,7 @@ def _del_chat_image(filename: str):
 
 def process_chat_image(data: bytes) -> bytes:
     """Strip ALL metadata, resize to max 800px, return JPEG bytes at quality 72."""
+    Image.MAX_IMAGE_PIXELS = 20_000_000
     img = Image.open(io.BytesIO(data))
     # Convert mode so we always get a clean RGB (drops EXIF, ICC, XMP etc.)
     if img.mode in ("RGBA", "P", "LA"):
