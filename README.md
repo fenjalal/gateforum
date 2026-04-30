@@ -15,7 +15,7 @@ Powered by [Firo](https://firo.org) cryptocurrency for contributor verification.
 
 ---
 
-## Requirements
+# Requirements
 
 - Python 3.10+
 - See `requirements.txt` for all dependencies
@@ -24,7 +24,7 @@ Powered by [Firo](https://firo.org) cryptocurrency for contributor verification.
 
 ---
 
-## Install
+# Install
 
 ```bash
 git clone https://github.com/fenjalal/gateforum.git
@@ -39,7 +39,7 @@ pip install -r requirements.txt --break-system-packages
 
 ---
 
-## Setup
+# Setup
 
 **1. Generate admin password** (run once only):
 ```bash
@@ -89,7 +89,7 @@ http://127.0.0.1:5000/{DNet_ADMIN_PREFIX}/{DNet_ADMIN_SUFFIX}
 
 ---
 
-## Update
+# Update
 
 ```bash
 cp -r instance/ instance_backup/
@@ -169,7 +169,5 @@ gateforum/
 <div align="center">
 
 *Built for privacy. Built for anonymity. Built to last.*
-
-Contributors: fen & parood
 
 </div>
