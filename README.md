@@ -62,7 +62,12 @@ DNet_ADMIN_SUFFIX=your_other_random_word
 DNet_HOST=127.0.0.1
 DNet_PORT=5000
 
-# FiroGate — required for verified badges (powered by Firo)
+# FiroGate (optional)
+# Not required for basic setup. Only needed if you want to enable payments.
+# You can configure API keys later when officially enabling the FiroGate integration.
+# The system will support both clearnet and hidden services in future releases.
+# Status: coming soon
+
 FIROGATE_API_KEY=fgate_your_key_here
 FIROGATE_WEBHOOK_SECRET=your_webhook_secret
 FIROGATE_BASE_URL=https://api.firogate.com
