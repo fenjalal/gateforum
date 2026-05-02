@@ -45,6 +45,7 @@
       </div>
     </div>
     <form method="POST" action="{{ url_for('firo_pay') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-primary btn-sm">Pay {{ verify_amount }} FIRO</button>
     </form>
   </div>
@@ -73,6 +74,7 @@
         <a href="{{ url_for('post_detail', post_id=p.id) }}" class="btn btn-secondary btn-sm">View</a>
         <form method="POST" action="{{ url_for('contributor_delete', post_id=p.id) }}"
               onsubmit="return confirm('Delete this post permanently?')">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
           <button class="btn btn-danger btn-sm">Delete</button>
         </form>
       </div>

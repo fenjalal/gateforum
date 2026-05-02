@@ -126,6 +126,28 @@ class _DbSessionInterface(SessionInterface):
             path      = path,
         )
 
+def _rotate_session() -> None:
+    """Regenerate session ID on privilege escalation (login) to prevent session fixation.
+    Copies all existing session data into a brand-new session ID.
+    The old session row is deleted from the DB on the next save_session call.
+    """
+    old_data = dict(session)
+    old_sid  = getattr(session, "sid", None)
+    # Delete old session from DB immediately
+    if old_sid:
+        try:
+            db = get_db()
+            db.execute(f"DELETE FROM {_DbSessionInterface._TABLE} WHERE sid=?", (old_sid,))
+            db.commit()
+        except Exception:
+            pass
+    # Assign new SID and mark session as modified
+    session.sid      = secrets.token_urlsafe(48)
+    session.new      = True
+    session.modified = True
+    # Restore data
+    session.update(old_data)
+
 from dotenv import load_dotenv
 from flask import (Flask, render_template, request, redirect,
                    url_for, abort, g, session, make_response, send_from_directory)
@@ -1241,9 +1263,10 @@ def post_react(post_id, reaction):
         )
     db.commit()
 
-    # Redirect: if came from feed (next=index), go back to feed — don't enter post
-    next_url = request.form.get("next", "")
-    if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+    # Redirect: whitelist-only — never trust user-supplied URLs
+    _SAFE_NEXT = {"/", url_for("index"), url_for("search")}
+    next_url   = request.form.get("next", "")
+    if next_url in _SAFE_NEXT:
         return redirect(next_url)
     return redirect(url_for("post_detail", post_id=post_id) + "#reactions")
 
@@ -1251,6 +1274,7 @@ def post_react(post_id, reaction):
 @app.route("/post/<post_id>/report", methods=["POST"])
 def post_report(post_id):
     """Anonymous report — IP-hashed, no identity stored."""
+    if not _csrf_ok(): abort(403)
     db      = get_db()
     post    = db.execute("SELECT id FROM posts WHERE id=?", (post_id,)).fetchone()
     if not post: abort(404)
@@ -1665,6 +1689,7 @@ def token_login():
                     db.commit()
                     log_action("token_claimed", f"Pool token '{row['label']}' claimed")
 
+                _rotate_session()                # prevent session fixation
                 resp = make_response(redirect(url_for("contributor_dashboard")))
                 resp.set_cookie("dn_token", raw, max_age=7776000,
                                 httponly=True, samesite="Lax", secure=False)
@@ -1847,6 +1872,7 @@ def self_register():
                     db.commit()
                     log_action("self_register", f"New account: {display_name}")
 
+                    _rotate_session()            # prevent session fixation
                     session["claimed_token"]       = raw
                     session["claimed_token_label"] = display_name
                     session["claimed_token_name"]  = display_name
@@ -1982,11 +2008,9 @@ def _verify_webhook_sig(payload: dict, signature: str, timestamp: int) -> bool:
         return False
 
     if not FIROGATE_WEBHOOK_SECRET:
-        # No secret configured — accept but warn
-        app.logger.warning("GateForum webhook: FIROGATE_WEBHOOK_SECRET not set — accepting without HMAC check")
-        if nonce:
-            _used_nonces[nonce] = time.time()
-        return True
+        # No secret configured — REJECT all webhooks to prevent badge bypass
+        app.logger.error("GateForum webhook: FIROGATE_WEBHOOK_SECRET not set — rejecting webhook for security")
+        return False
 
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     expected  = hmac.new(FIROGATE_WEBHOOK_SECRET.encode(), canonical, hashlib.sha256).hexdigest()
@@ -2044,6 +2068,7 @@ def _get_site_base() -> str:
 @app.route("/verify/pay", methods=["POST"])
 @require_poster
 def firo_pay():
+    if not _csrf_ok(): abort(403)
     if _is_admin():
         return redirect(url_for("admin_dashboard"))
 
@@ -2119,6 +2144,13 @@ def firo_pay():
 @app.route("/verify/success")
 @require_poster
 def firo_success():
+    """
+    Landing page after FiroGate redirects user back.
+    DOES NOT grant badge — badge is granted ONLY via:
+      1. Webhook POST /webhook/firogate (server-to-server, HMAC verified)
+      2. firo_status polling (polls FiroGate API directly with our API key)
+    URL query params are NEVER trusted to grant verified status.
+    """
     if _is_admin():
         return redirect(url_for("admin_dashboard"))
 
@@ -2127,49 +2159,11 @@ def firo_success():
     if not tok:
         return redirect(url_for("token_login"))
 
-    db = get_db()
+    # order_id from URL — only used for display/polling, never for granting badge
+    order_id = request.args.get("order_id") or request.args.get("payment_id") or ""
 
-    # FiroGate may pass order_id or payment_id in the redirect URL query string
-    order_id   = request.args.get("order_id") or request.args.get("payment_id") or ""
-    ext_status = (request.args.get("status") or "").lower()
-
-    app.logger.info("firo_success: tok=%s order_id=%s status=%s",
-                    tok["id"][:8], order_id, ext_status)
-
-    # If GateForum returned confirmed status in the URL — trust it and grant badge
-    if ext_status in ("confirmed", "paid", "completed", "success", "complete"):
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # Record if we have an order_id and no existing record
-        if order_id:
-            db.execute(
-                "INSERT OR IGNORE INTO firo_payments "
-                "(id, token_id, order_id, amount_firo, status, checkout_url, created, confirmed_at) "
-                "VALUES (?, ?, ?, ?, 'confirmed', '', ?, ?)",
-                (uuid.uuid4().hex, tok["id"], order_id,
-                 FIROGATE_VERIFY_AMOUNT, now, now)
-            )
-        db.execute("UPDATE tokens SET verified=1 WHERE id=?", (tok["id"],))
-        db.commit()
-        log_action("firo_success_url_confirmed",
-                   f"order={order_id} tok={tok['id'][:8]} badge granted via success URL")
-        # Re-fetch tok to reflect verified=1
-        tok = _get_token_row(raw)
-
-    # If we have an order_id but no payment record, create one so polling works
-    elif order_id and not tok["verified"]:
-        existing = db.execute(
-            "SELECT id FROM firo_payments WHERE order_id=?", (order_id,)
-        ).fetchone()
-        if not existing:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            db.execute(
-                "INSERT OR IGNORE INTO firo_payments "
-                "(id, token_id, order_id, amount_firo, status, checkout_url, created) "
-                "VALUES (?, ?, ?, ?, 'pending', '', ?)",
-                (uuid.uuid4().hex, tok["id"], order_id, FIROGATE_VERIFY_AMOUNT, now)
-            )
-            db.commit()
-            app.logger.info("firo_success: created firo_payment record for order=%s", order_id)
+    app.logger.info("firo_success: tok=%s order_id=%s (no badge granted from URL)",
+                    tok["id"][:8], order_id)
 
     return render_template("verify_success.html", tok_row=tok, order_id=order_id)
 
@@ -2231,10 +2225,13 @@ def firo_status():
 
     if status in ("confirmed", "paid", "completed", "success", "complete"):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Use conditional UPDATE — safe against race conditions from parallel polls
         db.execute(
-            "UPDATE firo_payments SET status='confirmed', confirmed_at=? WHERE order_id=?",
+            "UPDATE firo_payments SET status='confirmed', confirmed_at=? "
+            "WHERE order_id=? AND status!='confirmed'",
             (now, pmt["order_id"])
         )
+        # verified=1 is idempotent — safe to run multiple times
         db.execute("UPDATE tokens SET verified=1 WHERE id=?", (tok["id"],))
         db.commit()
         log_action("firo_status_confirmed",
@@ -2320,8 +2317,11 @@ def firo_webhook():
         return "", 200  # idempotent
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    db.execute("UPDATE firo_payments SET status='confirmed', confirmed_at=? WHERE order_id=?",
-               (now, order_id))
+    db.execute(
+        "UPDATE firo_payments SET status='confirmed', confirmed_at=? "
+        "WHERE order_id=? AND status!='confirmed'",
+        (now, order_id)
+    )
     db.execute("UPDATE tokens SET verified=1 WHERE id=?", (pmt["token_id"],))
     db.commit()
     log_action("firo_payment_confirmed",
@@ -2402,6 +2402,7 @@ def contributor_profile():
 @require_poster
 def contributor_remove_avatar():
     """Remove contributor's avatar."""
+    if not _csrf_ok(): abort(403)
     if _is_admin(): return redirect(url_for("admin_dashboard"))
     tok = _current_tok()
     db = get_db()
@@ -2504,6 +2505,7 @@ def new_post():
 @app.route("/contribute/delete/<post_id>", methods=["POST"])
 @require_poster
 def contributor_delete(post_id):
+    if not _csrf_ok(): abort(403)
     if _is_admin(): return redirect(url_for("admin_delete", post_id=post_id))
     tok  = _current_tok(); db = get_db()
     post = db.execute("SELECT * FROM posts WHERE id=? AND token_id=?",
@@ -2527,7 +2529,9 @@ def admin_login():
         elif not _csrf_ok():
             error = "Invalid form submission. Please refresh and try again."
         elif check_admin_password(request.form.get("password","")):
-            session.permanent = True; session["admin"] = True
+            _rotate_session()                    # prevent session fixation
+            session.permanent = True
+            session["admin"]  = True
             log_action("admin_login", "success")
             return redirect(url_for("admin_dashboard"))
         else:
@@ -2606,6 +2610,7 @@ def admin_reports():
 @app.route(f"/{ADMIN_PREFIX}/reports/resolve/<report_id>", methods=["POST"])
 @require_admin
 def admin_resolve_report(report_id):
+    if not _csrf_ok(): abort(403)
     db = get_db()
     db.execute("UPDATE post_reports SET resolved=1 WHERE id=?", (report_id,))
     db.commit()
@@ -2617,6 +2622,7 @@ def admin_resolve_report(report_id):
 @require_admin
 def admin_delete_reported(report_id, post_id):
     """Delete the reported post and resolve the report in one action."""
+    if not _csrf_ok(): abort(403)
     # Validate post_id is safe hex
     if not re.match(r'^[a-f0-9]{32}$', post_id):
         abort(400)
@@ -2863,6 +2869,7 @@ def claim_pool_token(token_id):
     error = None
     
     if request.method == "POST":
+        if not _csrf_ok(): abort(403)
         # Get and validate the display name
         display_name = request.form.get("display_name", "").strip()
         
@@ -2909,27 +2916,28 @@ def claim_pool_token(token_id):
 
 @app.route("/token-claimed")
 def token_claimed():
-    """Show the claimed token to the user."""
+    """Show the claimed token to the user — once only."""
     claimed_token = session.get("claimed_token")
     claimed_label = session.get("claimed_token_label", "")
-    claimed_name = session.get("claimed_token_name", "")
-    
+    claimed_name  = session.get("claimed_token_name", "")
+
     if not claimed_token:
         return redirect(url_for("token_login"))
-    
-    # Set the auth cookie
-    resp = make_response(render_template("token_claimed.html", 
-                                          token=claimed_token, 
-                                          label=claimed_label,
-                                          display_name=claimed_name))
+
+    # Clear sensitive data from session first
+    session.pop("claimed_token",       None)
+    session.pop("claimed_token_label", None)
+    session.pop("claimed_token_name",  None)
+
+    # Rotate session ID — we're elevating to authenticated state
+    _rotate_session()
+
+    resp = make_response(render_template("token_claimed.html",
+                                         token=claimed_token,
+                                         label=claimed_label,
+                                         display_name=claimed_name))
     resp.set_cookie("dn_token", claimed_token, max_age=7776000,
                     httponly=True, samesite="Lax", secure=False)
-    
-    # Clear from session after showing
-    session.pop("claimed_token", None)
-    session.pop("claimed_token_label", None)
-    session.pop("claimed_token_name", None)
-    
     return resp
 
 @app.route(f"/{ADMIN_PREFIX}/tokens/revoke/<tid>", methods=["POST"])

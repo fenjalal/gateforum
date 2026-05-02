@@ -48,6 +48,7 @@
           {# Resolve — keep post, just dismiss report #}
           <form method="POST"
                 action="{{ url_for('admin_resolve_report', report_id=r.id) }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
             <button class="btn btn-secondary btn-sm">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                    stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -61,6 +62,7 @@
           <form method="POST"
                 action="{{ url_for('admin_delete_reported', report_id=r.id, post_id=r.post_id) }}"
                 onsubmit="return confirm('Delete this post permanently?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
             <button class="btn btn-danger btn-sm">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
