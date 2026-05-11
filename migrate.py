@@ -41,13 +41,10 @@ columns = [
     ("posts",         "token_id",        "TEXT NOT NULL DEFAULT ''"),
     ("posts",         "author_id",       "TEXT NOT NULL DEFAULT ''"),
     ("posts",         "edited",          "TEXT NOT NULL DEFAULT ''"),
-    ("posts",         "reaction_fire",   "INTEGER NOT NULL DEFAULT 0"),
-    ("posts",         "reaction_skull",  "INTEGER NOT NULL DEFAULT 0"),
-    ("posts",         "reaction_eye",    "INTEGER NOT NULL DEFAULT 0"),
-    ("posts",         "reaction_bolt",   "INTEGER NOT NULL DEFAULT 0"),
     ("chat",          "reply_to_nick",   "TEXT NOT NULL DEFAULT ''"),
     ("firo_payments", "confirmed_at",    "TEXT NOT NULL DEFAULT ''"),
-    ("settings",      "updated",         "TEXT NOT NULL DEFAULT ''"),
+    ("post_reactions","token_hash",      "TEXT NOT NULL DEFAULT ''"),
+
 ]
 for table, col, typedef in columns:
     # Check table exists first
@@ -111,9 +108,8 @@ CREATE TABLE IF NOT EXISTS tokens (
     verified       INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS settings (
-    name    TEXT PRIMARY KEY,
-    value   TEXT NOT NULL DEFAULT '',
-    updated TEXT NOT NULL DEFAULT ''
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS activity_log (
     id     TEXT PRIMARY KEY,
@@ -122,19 +118,24 @@ CREATE TABLE IF NOT EXISTS activity_log (
     ts     TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS chat (
-    id           TEXT PRIMARY KEY,
-    nick         TEXT NOT NULL,
-    msg          TEXT NOT NULL,
-    ts           TEXT NOT NULL,
-    reply_to_id  TEXT NOT NULL DEFAULT '',
-    reply_to_nick TEXT NOT NULL DEFAULT ''
+    id          TEXT PRIMARY KEY,
+    message     TEXT NOT NULL,
+    image       TEXT NOT NULL DEFAULT '',
+    nickname    TEXT NOT NULL,
+    is_token    INTEGER NOT NULL DEFAULT 0,
+    token_id    TEXT NOT NULL DEFAULT '',
+    reply_to    TEXT NOT NULL DEFAULT '',
+    reply_to_nick TEXT NOT NULL DEFAULT '',
+    replied     INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS post_reactions (
-    id       TEXT PRIMARY KEY,
-    post_id  TEXT NOT NULL,
-    ip_hash  TEXT NOT NULL,
-    reaction TEXT NOT NULL,
-    created  TEXT NOT NULL DEFAULT '',
+    id         TEXT PRIMARY KEY,
+    post_id    TEXT NOT NULL,
+    ip_hash    TEXT NOT NULL,
+    token_hash TEXT NOT NULL DEFAULT '',
+    reaction   TEXT NOT NULL,
+    created    TEXT NOT NULL DEFAULT '',
     UNIQUE(post_id, ip_hash, reaction)
 );
 CREATE TABLE IF NOT EXISTS post_reports (

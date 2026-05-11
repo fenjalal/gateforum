@@ -10,10 +10,15 @@
       <button type="submit" class="btn btn-primary btn-sm">Search</button>
     </form>
     {% if q %}
-    <div class="feed-hdr">{{ results|length }} result{% if results|length != 1 %}s{% endif %} for &ldquo;{{ q }}&rdquo;</div>
+    <div class="feed-hdr">{{ total }} result{% if total != 1 %}s{% endif %} for &ldquo;{{ q }}&rdquo; — page {{ page }}</div>
     {% if results %}
       {% for item in results %}{% set post=item.post %}{% set imgs=item.imgs %}{% set author_row=item.author_row %}{% set rt=item.rt %}{% set tok_verified=item.tok_verified %}{% set tok_avatar=item.tok_avatar %}
       {% include '_post_card.html' %}{% endfor %}
+      <nav class="paging">
+        {% if page > 1 %}<a href="{{ url_for('search', q=q, page=page-1) }}">&larr; Previous</a>{% else %}<span>&larr; Previous</span>{% endif %}
+        <span class="paging-cur">{{ page }}</span>
+        {% if page * ppp < total %}<a href="{{ url_for('search', q=q, page=page+1) }}">Next &rarr;</a>{% else %}<span>Next &rarr;</span>{% endif %}
+      </nav>
     {% else %}<div class="empty">No results found.</div>{% endif %}
     {% else %}<div class="empty">Enter a search term above.</div>{% endif %}
   </section>

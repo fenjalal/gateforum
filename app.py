@@ -267,6 +267,8 @@ _rl_search   = defaultdict(list)
 _rl_upload   = defaultdict(list)
 _rl_post     = defaultdict(list)   # POST flood guard
 _rl_register = defaultdict(list)   # registration flood guard
+_rl_webhook  = defaultdict(list)   # webhook endpoint guard
+_rl_webhook_order = defaultdict(list)  # per-order webhook replay guard
 
 def _chk(store, ip, limit, window) -> bool:
     now = time.time(); cut = now - window
@@ -402,10 +404,9 @@ def _detect_network():
 def _guard():
     ip = request.remote_addr or "unknown"
 
-    # Webhook endpoint: skip all browser-oriented guards; signature check handles security
+    # Webhook endpoint: skip browser-oriented guards; use dedicated rate limiting
     if request.path == "/webhook/firogate":
-        # Only apply global page rate limit (generous)
-        if _chk(_rl_page, ip, 150, 60):
+        if _chk(_rl_webhook, ip, 30, 60):
             abort(429)
         return
 
@@ -709,7 +710,7 @@ def log_action(action: str, detail: str = ""):
         )
         db.commit()
     except Exception:
-        pass
+        app.logger.warning("Failed to write action_log: %s", detail[:80])
 
 # ── Auth helpers ───────────────────────────────────────────────────────────
 def _hash_token(tok: str) -> str:
@@ -764,7 +765,7 @@ def _author_by_id(aid: str):
 
 def _enrich(post) -> dict:
     try:   imgs = json.loads(post["images"])
-    except: imgs = []
+    except Exception: imgs = []
     ar = _author_by_id(post["author_id"]) or _author_by_name(post["author"])
     tok_verified = False
     tok_avatar   = ""
@@ -1630,30 +1631,46 @@ def chat_img(msg_id):
 def search():
     ip = request.remote_addr or "unknown"
     if _chk(_rl_search, ip, 20, 60): abort(429)
-    q  = request.args.get("q","").strip()[:200]
-    db = get_db()
+    q    = request.args.get("q","").strip()[:200]
+    page = max(1, request.args.get("page", 1, type=int))
+    ppp  = 20
+    db   = get_db()
     results = []
+    total  = 0
     if q:
-        # Try FTS5 first — much faster and relevance-ranked
+        like = f"%{q}%"
+        # Count total matches first
         try:
-            # Escape FTS5 special chars
+            q_fts = re.sub(r'["\*\^\(\)\[\]\{\}\\]', ' ', q).strip()
+            total = db.execute(
+                "SELECT COUNT(*) FROM posts_fts WHERE posts_fts MATCH ?",
+                (q_fts,)
+            ).fetchone()[0]
+        except Exception:
+            total = db.execute(
+                "SELECT COUNT(*) FROM posts WHERE title LIKE ? OR body LIKE ?",
+                (like, like)
+            ).fetchone()[0]
+
+        offset = (page - 1) * ppp
+        # Try FTS5 first
+        try:
             q_fts = re.sub(r'["\*\^\(\)\[\]\{\}\\]', ' ', q).strip()
             rows  = db.execute(
                 """SELECT posts.* FROM posts
                    JOIN posts_fts ON posts.rowid = posts_fts.rowid
                    WHERE posts_fts MATCH ?
-                   ORDER BY rank LIMIT 30""",
-                (q_fts,)
+                   ORDER BY rank LIMIT ? OFFSET ?""",
+                (q_fts, ppp, offset)
             ).fetchall()
         except Exception:
-            # FTS5 unavailable or query error — fallback to LIKE
-            like = f"%{q}%"
             rows = db.execute(
-                "SELECT * FROM posts WHERE title LIKE ? OR body LIKE ? ORDER BY created DESC LIMIT 30",
-                (like, like)
+                "SELECT * FROM posts WHERE title LIKE ? OR body LIKE ? ORDER BY created DESC LIMIT ? OFFSET ?",
+                (like, like, ppp, offset)
             ).fetchall()
         results = [_enrich(r) for r in rows]
-    return render_template("search.html", q=q, results=results, sidebar=_sidebar(db))
+    return render_template("search.html", q=q, results=results, total=total,
+                           page=page, ppp=ppp, sidebar=_sidebar(db))
 
 # ── Token login ────────────────────────────────────────────────────────────
 @app.route("/token-access", methods=["GET","POST"])
@@ -1935,17 +1952,20 @@ def _firogate_request(endpoint: str, payload: dict, method: str = "POST") -> dic
     except ImportError:
         raise RuntimeError("The `requests` library is required. Run: pip install requests")
 
+    # Only disable SSL verify for http:// URLs (e.g. .onion has no HTTPS).
+    # For https:// clearnet APIs through Tor, still verify — the SOCKS proxy
+    # passes the hostname through for cert validation.
+    _verify = url.startswith("https://")
     try:
         if method == "GET":
             r = _req.get(url, headers=headers, proxies=proxies,
-                         timeout=timeout, verify=not use_tor)
+                         timeout=timeout, verify=_verify)
         else:
             r = _req.post(url, json=payload, headers=headers,
-                          proxies=proxies, timeout=timeout, verify=not use_tor)
+                          proxies=proxies, timeout=timeout, verify=_verify)
     except _req.exceptions.SSLError as e:
-        # On Tor/onion, SSL errors are expected — retry without verify
-        if use_tor:
-            app.logger.warning("GateForum SSL error on Tor, retrying without verify: %s", e)
+        if _verify:
+            app.logger.warning("GateForum SSL error on %s, retrying without verify: %s", url[:50], e)
             if method == "GET":
                 r = _req.get(url, headers=headers, proxies=proxies, timeout=timeout, verify=False)
             else:
@@ -2307,6 +2327,11 @@ def firo_webhook():
     if not order_id:
         return "", 400
 
+    # Per-order rate limit (same order_id max 5 times per 10 minutes)
+    if _chk(_rl_webhook_order, order_id, 5, 600):
+        app.logger.warning("GateForum webhook: order %s rate limited", order_id[:20])
+        return "", 429
+
     db  = get_db()
     pmt = db.execute(
         "SELECT * FROM firo_payments WHERE order_id=?", (order_id,)
@@ -2385,7 +2410,7 @@ def contributor_profile():
                             old_path = os.path.join(app.config["AVATAR_FOLDER"], tok["claimed_avatar"])
                             if os.path.exists(old_path):
                                 try: os.remove(old_path)
-                                except: pass
+                                except OSError: pass
                         open(avatar_path, "wb").write(clean_data)
                         db.execute("UPDATE tokens SET claimed_avatar=? WHERE id=?", (filename, tok["id"]))
                         db.commit()
@@ -2411,7 +2436,7 @@ def contributor_remove_avatar():
         old_path = os.path.join(app.static_folder, "avatars", tok["claimed_avatar"])
         if os.path.exists(old_path):
             try: os.remove(old_path)
-            except: pass
+            except OSError: pass
         db.execute("UPDATE tokens SET claimed_avatar='' WHERE id=?", (tok["id"],))
         db.commit()
     
