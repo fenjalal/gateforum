@@ -10,6 +10,17 @@
   </div>
   <div class="vs-title" style="color:var(--green)">You're Verified!</div>
   <p class="vs-desc">You can publish posts immediately.</p>
+  {% if payment %}
+  <div class="vs-receipt">
+    <div class="vs-receipt-row"><span>Amount</span><span>{{ "%.8f"|format(payment.amount_firo) }} FIRO</span></div>
+    {% if payment.txid %}
+    <div class="vs-receipt-row"><span>Transaction ID</span><span class="vs-receipt-mono">{{ payment.txid }}</span></div>
+    {% endif %}
+    {% if payment.confirmed_at %}
+    <div class="vs-receipt-row"><span>Confirmed</span><span>{{ payment.confirmed_at }}</span></div>
+    {% endif %}
+  </div>
+  {% endif %}
   <a href="{{ url_for('new_post') }}" class="btn btn-primary" style="width:100%;margin-top:1.2rem">&#9998;&nbsp; Write Your First Post</a>
   <a href="{{ url_for('contributor_dashboard') }}" class="btn btn-secondary" style="width:100%;margin-top:.5rem">Go to Dashboard</a>
 
@@ -44,6 +55,10 @@
 .vs-note{font-family:var(--mono);font-size:.58rem;color:var(--text-dim);margin-top:1.5rem;line-height:1.6}
 .vs-progress{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin:.5rem 0 .2rem}
 .vs-progress-bar{height:100%;width:0%;background:#e2c246;border-radius:2px;transition:width .5s ease}
+.vs-receipt{text-align:left;background:var(--bg3);border-radius:8px;padding:.9rem 1rem;margin:1rem 0;font-size:.78rem}
+.vs-receipt-row{display:flex;justify-content:space-between;gap:.75rem;padding:.3rem 0;color:var(--text-dim)}
+.vs-receipt-row span:last-child{color:var(--text-head);text-align:right;word-break:break-all}
+.vs-receipt-mono{font-family:var(--mono);font-size:.7rem}
 </style>
 
 {% if not (tok_row and tok_row.verified) %}

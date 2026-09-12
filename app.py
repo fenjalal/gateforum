@@ -269,6 +269,7 @@ _rl_post     = defaultdict(list)   # POST flood guard
 _rl_register = defaultdict(list)   # registration flood guard
 _rl_webhook  = defaultdict(list)   # webhook endpoint guard
 _rl_webhook_order = defaultdict(list)  # per-order webhook replay guard
+_rl_pay      = defaultdict(list)   # payment-creation flood guard (per token)
 
 def _chk(store, ip, limit, window) -> bool:
     now = time.time(); cut = now - window
@@ -642,6 +643,7 @@ def init_db():
         ("posts",   "author_id",    "TEXT NOT NULL DEFAULT ''"),
         ("chat",    "reply_to_nick","TEXT NOT NULL DEFAULT ''"),
         ("firo_payments", "confirmed_at", "TEXT NOT NULL DEFAULT ''"),
+        ("firo_payments", "txid",         "TEXT NOT NULL DEFAULT ''"),
         ("posts", "reaction_fire",   "INTEGER NOT NULL DEFAULT 0"),
         ("posts", "reaction_skull",  "INTEGER NOT NULL DEFAULT 0"),
         ("posts", "reaction_eye",    "INTEGER NOT NULL DEFAULT 0"),
@@ -2098,6 +2100,11 @@ def firo_pay():
     if not tok:
         return redirect(url_for("token_login"))
 
+    if _chk(_rl_pay, tok["id"], 5, 600):
+        app.logger.warning("firo_pay: rate limited tok=%s", tok["id"][:8])
+        return render_template("error.html", code=429,
+                               msg="Too many payment attempts. Please wait a few minutes and try again."), 429
+
     # Already verified — never charge again
     if tok["verified"]:
         return redirect(url_for("contributor_dashboard"))
@@ -2185,7 +2192,18 @@ def firo_success():
     app.logger.info("firo_success: tok=%s order_id=%s (no badge granted from URL)",
                     tok["id"][:8], order_id)
 
-    return render_template("verify_success.html", tok_row=tok, order_id=order_id)
+    # Display-only: if already confirmed in DB, show the receipt details.
+    # Purely informational — badge status itself still only ever comes from
+    # tok_row.verified, set exclusively by the webhook/poll paths above.
+    payment = None
+    if tok["verified"]:
+        payment = get_db().execute(
+            "SELECT amount_firo, txid, confirmed_at FROM firo_payments "
+            "WHERE token_id=? AND status='confirmed' ORDER BY confirmed_at DESC LIMIT 1",
+            (tok["id"],)
+        ).fetchone()
+
+    return render_template("verify_success.html", tok_row=tok, order_id=order_id, payment=payment)
 
 
 @app.route("/verify/status")
@@ -2320,8 +2338,8 @@ def firo_webhook():
         app.logger.warning("GateForum webhook bad sig from %s", request.remote_addr)
         return "", 403
 
-    if event != "payment.confirmed":
-        return "", 200
+    if event not in ("payment.confirmed", "payment.expired", "payment.cancelled"):
+        return "", 200  # unknown/future event type — ack without action
 
     order_id = payload.get("order_id", "")
     if not order_id:
@@ -2339,18 +2357,33 @@ def firo_webhook():
     if not pmt:
         return "", 404
     if pmt["status"] == "confirmed":
-        return "", 200  # idempotent
+        return "", 200  # idempotent — never downgrade a confirmed payment
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if event == "payment.confirmed":
+        txid = str(payload.get("txid") or "")
+        db.execute(
+            "UPDATE firo_payments SET status='confirmed', confirmed_at=?, txid=? "
+            "WHERE order_id=? AND status!='confirmed'",
+            (now, txid, order_id)
+        )
+        db.execute("UPDATE tokens SET verified=1 WHERE id=?", (pmt["token_id"],))
+        db.commit()
+        log_action("firo_payment_confirmed",
+                   f"order={order_id} tok={pmt['token_id'][:8]} badge granted")
+        return "", 200
+
+    # payment.expired / payment.cancelled — only touches still-pending rows,
+    # so a race with a confirmation that lands moments later can't clobber it
+    # (the status!='confirmed' guard above already returned early for those).
+    new_status = "expired" if event == "payment.expired" else "cancelled"
     db.execute(
-        "UPDATE firo_payments SET status='confirmed', confirmed_at=? "
-        "WHERE order_id=? AND status!='confirmed'",
-        (now, order_id)
+        "UPDATE firo_payments SET status=? WHERE order_id=? AND status='pending'",
+        (new_status, order_id)
     )
-    db.execute("UPDATE tokens SET verified=1 WHERE id=?", (pmt["token_id"],))
     db.commit()
-    log_action("firo_payment_confirmed",
-               f"order={order_id} tok={pmt['token_id'][:8]} badge granted")
+    log_action(f"firo_payment_{new_status}", f"order={order_id} tok={pmt['token_id'][:8]}")
     return "", 200
 
 
