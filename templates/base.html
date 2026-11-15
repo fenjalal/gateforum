@@ -1,45 +1,68 @@
+{% import "_icons.html" as i %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
+  <meta name="theme-color" content="#0d0d0c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f7f5f0" media="(prefers-color-scheme: light)">
   <title>{% block title %}{{ site_title }}{% endblock %}</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-  <link rel="alternate" type="application/rss+xml" title="GateForum RSS" href="/feed.xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=6">
+  <link rel="alternate" type="application/rss+xml" title="{{ site_title }}" href="/feed.xml">
 </head>
 <body>
-<div class="site-wrap">
-  <header class="site-header">
-    <div class="header-inner">
-      <a href="{{ url_for('index') }}" class="site-logo">
-       <svg width="20" height="20" viewBox="0 0 20 20"><path fill="currentColor" d="M15 2H5L4 8h12zM0 10s2 1 10 1s10-1 10-1l-4-2H4zm8 4h4v1H8z"/><circle cx="6" cy="15" r="3" fill="currentColor"/><circle cx="14" cy="15" r="3" fill="currentColor"/></svg>
-        <span class="die">{{ site_title.split()[0] if site_title else 'Die' }}</span>{{ site_title.split()[1] if site_title.split()|length > 1 else 'Forum' }}
-      </a>
-      <form class="header-search" method="GET" action="{{ url_for('search') }}">
-        <input type="text" name="q" placeholder="Search…" maxlength="200" autocomplete="off" class="hs-input">
-        <button type="submit" class="hs-btn" title="Search">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" width="13" height="13">
-            <circle cx="6.5" cy="6.5" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/>
-          </svg>
-        </button>
+<div class="site">
+  {% set ep = request.endpoint or '' %}
+  <header class="topbar">
+    <div class="wrap topbar-in">
+      <a href="{{ url_for('index') }}" class="brand">{{ i.logo() }}{{ site_title or 'GateForum' }}</a>
+      <nav class="nav" aria-label="Main">
+        <a href="{{ url_for('index') }}" {% if ep == 'index' %}aria-current="page"{% endif %}>Latest</a>
+        <a href="{{ url_for('chat_page') }}" {% if ep == 'chat_page' %}aria-current="page"{% endif %}>Chat</a>
+        {% if shop_link %}<a href="{{ url_for('shop') }}" {% if ep.startswith('product') or ep == 'shop' %}aria-current="page"{% endif %}>Shop</a>{% endif %}
+        <a href="{{ url_for('search') }}" class="m-only" {% if ep == 'search' %}aria-current="page"{% endif %}>Search</a>
+        {% if current_is_admin %}
+        <a href="{{ url_for('admin_dashboard') }}" {% if ep.startswith('admin') %}aria-current="page"{% endif %}>Admin</a>
+        {% elif current_tok_row %}
+        <a href="{{ url_for('contributor_dashboard') }}" {% if ep.startswith('contributor') %}aria-current="page"{% endif %}>My posts</a>
+        {% endif %}
+      </nav>
+      <form class="top-search" method="GET" action="{{ url_for('search') }}" role="search">
+        {{ i.search() }}
+        <label class="sr-only" for="q-top">Search</label>
+        <input id="q-top" type="search" name="q" placeholder="Search posts" maxlength="200" autocomplete="off" value="{{ q if q is defined and q else '' }}">
       </form>
+      <div class="top-actions">
+        {% if current_is_admin %}
+          <a href="{{ url_for('new_post') }}" class="btn btn-primary btn-sm">{{ i.pen() }}Write</a>
+        {% elif current_tok_row %}
+          {% if current_tok_row.verified %}<a href="{{ url_for('new_post') }}" class="btn btn-primary btn-sm">{{ i.pen() }}Write</a>{% endif %}
+          <a href="{{ url_for('contributor_dashboard') }}" class="who">{{ i.avatar(current_tok_row.claimed_avatar, current_tok_row.claimed_name or current_tok_row.label) }}<span>{{ current_tok_row.claimed_name or current_tok_row.label }}</span></a>
+        {% else %}
+          <a href="{{ url_for('token_login') }}" class="btn btn-quiet btn-sm">Log in</a>
+          <a href="{{ url_for('self_register') }}" class="btn btn-primary btn-sm">Join</a>
+        {% endif %}
+      </div>
     </div>
   </header>
-  <main>{% block content %}{% endblock %}</main>
-  <footer class="site-footer">
-  ©2026 GateForum
 
-  <div class="footer-line">
-    <span class="wallet-title">Join Now</span>
-    <span class="wallet-address">
-    GateForum Core
-    </span>
-  </div>
+  <main><div class="wrap">{% block content %}{% endblock %}</div></main>
 
-</footer>
+  <footer class="footer">
+    <div class="wrap footer-in">
+      <span>{{ site_title or 'GateForum' }}{% if site_tagline %} · {{ site_tagline }}{% endif %}</span>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="{{ url_for('index') }}">Latest</a>
+        <a href="{{ url_for('chat_page') }}">Chat</a>
+        {% if shop_link %}<a href="{{ url_for('shop') }}">Shop</a>{% endif %}
+        <a href="{{ url_for('search') }}">Search</a>
+        <a href="/feed.xml">RSS</a>
+      </nav>
+    </div>
+  </footer>
 </div>
 </body>
 </html>

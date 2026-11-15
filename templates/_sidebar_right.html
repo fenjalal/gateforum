@@ -1,45 +1,50 @@
-<aside class="sidebar sidebar-right">
-  <div class="panel">
-    <div class="panel-title">
-      <svg width="9" height="9" viewBox="0 0 20 20"><path fill="var(--accent)" d="m10.44 3.02l1.82-1.82l6.36 6.35l-1.83 1.82a2.731 2.731 0 0 0-3.41.36l-.75.75c-.92.93-1.04 2.35-.35 3.41l-1.83 1.82l-2.41-2.41l-2.8 2.79c-.42.42-3.38 2.71-3.8 2.29s1.86-3.39 2.28-3.81l2.79-2.79L4.1 9.36l1.83-1.82c1.05.69 2.48.57 3.4-.36l.75-.75c.93-.92 1.05-2.35.36-3.41z"/></svg>
-      Latest
-    </div>
-    {% if sidebar.latest %}
-    <ul class="panel-list">
-      {% for p in sidebar.latest %}
-      <li><a href="{{ url_for('post_detail', post_id=p.id) }}" title="{{ p.title }}">{{ p.title }}</a>
-      <div class="panel-meta">{{ p.created[:10] }}</div></li>
+<aside class="rail" aria-label="More">
+  {% if sidebar is defined and sidebar %}
+  <section>
+    <h3>Most read</h3>
+    {% if sidebar.top_posts %}
+    <ol class="rail-list">
+      {% for p in sidebar.top_posts %}
+      <li><a href="{{ url_for('post_detail', post_id=p.id) }}">{{ p.title }}</a><span class="meta">{{ p.views }} views</span></li>
       {% endfor %}
-    </ul>
-    {% else %}<p class="panel-empty">No posts yet.</p>{% endif %}
-  </div>
-  <div class="panel">
-    <div class="panel-title">
-      Network
-    </div>
-    <div class="stat-row"><span class="stat-l">Protocol</span><span class="stat-v" style="color:var(--green)">v3</span></div>
-    <div class="stat-row"><span class="stat-l">OFF</span><span class="stat-v" style="color:var(--green)">JavaScript</span></div>
-  <div class="panel">
-    <div class="panel-title">
-      <svg viewBox="0 0 10 10" fill="none" stroke="var(--accent)" stroke-width="1.5" width="9" height="9"><rect x="2" y="3" width="6" height="5" rx="1"/><path d="M4 3V2a1 1 0 0 1 2 0v1"/></svg>
-      Contributor
-    </div>
-    {% if current_is_admin %}
-    <div class="panel-actions">
-      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-primary">Admin Panel</a>
-      <a href="{{ url_for('new_post') }}" class="btn btn-sm btn-secondary">+ New Post</a>
-    </div>
-    {% elif current_tok_row %}
-    <div class="panel-actions">
-      <div class="panel-tok-label">&#9679; {{ current_tok_row.label }}</div>
-      <a href="{{ url_for('contributor_dashboard') }}" class="btn btn-sm btn-primary">My Posts</a>
-      <a href="{{ url_for('new_post') }}" class="btn btn-sm btn-secondary">+ New Post</a>
-      <a href="{{ url_for('token_logout') }}" class="btn btn-sm btn-ghost">Logout</a>
-    </div>
+    </ol>
+    {% else %}<p class="muted">No posts yet.</p>{% endif %}
+  </section>
+  {% endif %}
+
+  {% if current_is_admin %}
+  <section class="rail-cta">
+    <h3>Admin</h3>
+    <a href="{{ url_for('new_post') }}" class="btn btn-primary btn-sm">Write a post</a>
+    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-ghost btn-sm">Admin panel</a>
+  </section>
+  {% elif current_tok_row %}
+  <section class="rail-cta">
+    <h3>Your account</h3>
+    {% if current_tok_row.verified %}
+    <a href="{{ url_for('new_post') }}" class="btn btn-primary btn-sm">Write a post</a>
     {% else %}
-    <div class="panel-actions">
-      <a href="{{ url_for('token_login') }}" class="btn btn-sm btn-secondary" style="width:100%;justify-content:center;">Login</a>
-    </div>
+    <a href="{{ url_for('contributor_dashboard') }}" class="btn btn-primary btn-sm">Get verified to post</a>
     {% endif %}
-  </div>
+    <a href="{{ url_for('contributor_dashboard') }}" class="btn btn-ghost btn-sm">My posts</a>
+    <a href="{{ url_for('token_logout') }}" class="btn btn-quiet btn-sm">Log out</a>
+  </section>
+  {% else %}
+  <section class="rail-cta">
+    <h3>Write here</h3>
+    <p class="rail-about">No email, no phone. You get a private key to sign in.</p>
+    <a href="{{ url_for('self_register') }}" class="btn btn-primary btn-sm">Create account</a>
+    <a href="{{ url_for('token_login') }}" class="btn btn-ghost btn-sm">Log in with key</a>
+  </section>
+  {% endif %}
+
+  {% if sidebar is defined and sidebar %}
+  <section>
+    <h3>Site</h3>
+    <div class="rail-rows">
+      <div><span>Posts</span><span>{{ sidebar.total_posts }}</span></div>
+      <div><span>Views</span><span>{{ sidebar.total_views }}</span></div>
+    </div>
+  </section>
+  {% endif %}
 </aside>

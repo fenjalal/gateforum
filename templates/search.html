@@ -1,26 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Search{% if q %}: {{ q }}{% endif %} — GateForum{% endblock %}
+{% block title %}Search{% if q %}: {{ q }}{% endif %} · {{ site_title or 'GateForum' }}{% endblock %}
 {% block content %}
-<div class="page-grid">
-  {% include '_sidebar_left.html' %}
-  <section class="feed">
-    <form class="search-form" method="GET" action="{{ url_for('search') }}">
-      <input type="text" name="q" value="{{ q }}" placeholder="Search posts…"
-             maxlength="200" autocomplete="off" class="search-inp" autofocus>
-      <button type="submit" class="btn btn-primary btn-sm">Search</button>
+<div class="layout">
+  <section aria-label="Search">
+    <form method="GET" action="{{ url_for('search') }}" class="inline" role="search" style="margin-bottom:22px">
+      <label class="sr-only" for="q-main">Search posts</label>
+      <input id="q-main" type="search" name="q" value="{{ q }}" placeholder="Search posts" maxlength="200" autocomplete="off" class="input" {% if not q %}autofocus{% endif %}>
+      <button type="submit" class="btn btn-primary">Search</button>
     </form>
     {% if q %}
-    <div class="feed-hdr">{{ total }} result{% if total != 1 %}s{% endif %} for &ldquo;{{ q }}&rdquo; — page {{ page }}</div>
+    <div class="feed-label">{{ total }} result{% if total != 1 %}s{% endif %} for “{{ q }}”</div>
     {% if results %}
       {% for item in results %}{% set post=item.post %}{% set imgs=item.imgs %}{% set author_row=item.author_row %}{% set rt=item.rt %}{% set tok_verified=item.tok_verified %}{% set tok_avatar=item.tok_avatar %}
       {% include '_post_card.html' %}{% endfor %}
-      <nav class="paging">
-        {% if page > 1 %}<a href="{{ url_for('search', q=q, page=page-1) }}">&larr; Previous</a>{% else %}<span>&larr; Previous</span>{% endif %}
-        <span class="paging-cur">{{ page }}</span>
-        {% if page * ppp < total %}<a href="{{ url_for('search', q=q, page=page+1) }}">Next &rarr;</a>{% else %}<span>Next &rarr;</span>{% endif %}
+      <nav class="pager" aria-label="Pages">
+        <a href="{{ url_for('search', q=q, page=page-1) }}" class="btn btn-ghost btn-sm{% if page <= 1 %} off{% endif %}">Previous</a>
+        <span class="now">Page {{ page }}</span>
+        <a href="{{ url_for('search', q=q, page=page+1) }}" class="btn btn-ghost btn-sm{% if page * ppp >= total %} off{% endif %}">Next</a>
       </nav>
-    {% else %}<div class="empty">No results found.</div>{% endif %}
-    {% else %}<div class="empty">Enter a search term above.</div>{% endif %}
+    {% else %}<p class="empty">Nothing found. Try other words.</p>{% endif %}
+    {% else %}<p class="empty">Type a word to search all posts.</p>{% endif %}
   </section>
   {% include '_sidebar_right.html' %}
 </div>

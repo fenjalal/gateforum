@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Shop · {{ site_title or 'GateForum' }}{% endblock %}
+{% block content %}
+{% import "_icons.html" as i %}
+<div class="page-head">
+  <div>
+    <h1 class="page-title">Shop</h1>
+    <p class="page-sub">Digital goods. Pay with Firo, download right away.</p>
+  </div>
+  <form method="GET" action="{{ url_for('shop') }}" class="inline shop-find" role="search">
+    <label class="sr-only" for="sq">Search the shop</label>
+    <input id="sq" type="search" name="q" value="{{ q }}" placeholder="Search the shop" class="input" maxlength="80">
+    {% if sort != 'new' %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+  </form>
+</div>
+
+<nav class="chips" aria-label="Sort">
+  {% for key, label in [('new','Newest'),('top','Best selling'),('low','Lowest price'),('high','Highest price')] %}
+  <a href="{{ url_for('shop', sort=key, q=q or None) }}" class="chip" {% if sort == key %}aria-current="true"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>
+
+{% if products %}
+<div class="shop-grid">
+  {% for p in products %}{% set r = ratings.get(p.id) %}
+  <a href="{{ url_for('product_page', pid=p.id) }}" class="item">
+    <div class="item-img">
+      {% if p.image %}<img src="{{ url_for('static', filename='uploads/' ~ p.image) }}" alt="" loading="lazy" decoding="async">
+      {% else %}<span class="item-ph">{{ p.title[0]|upper }}</span>{% endif %}
+      {% if p.id in owned %}<span class="pill pill-green item-tag">Yours</span>{% endif %}
+    </div>
+    <div class="item-body">
+      <h2 class="item-title">{{ p.title }}</h2>
+      {% if p.summary %}<p class="item-sum">{{ p.summary }}</p>{% endif %}
+      <div class="item-foot">
+        <span class="item-price">{{ "%g"|format(p.price_firo) }} <small>FIRO</small></span>
+        {% if r %}<span class="item-rate">{{ i.stars(r.avg) }}<small>{{ r.n }}</small></span>
+        {% else %}<span class="muted item-new">New</span>{% endif %}
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty">{% if q %}Nothing matches “{{ q }}”.{% else %}No products yet.{% endif %}</p>
+{% endif %}
+{% endblock %}

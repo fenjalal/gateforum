@@ -1,26 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Payment Cancelled — GateForum{% endblock %}
+{% block title %}Payment cancelled · {{ site_title or 'GateForum' }}{% endblock %}
 {% block content %}
-<div class="page-grid"><div></div>
-<div class="form-wrap" style="max-width:480px;text-align:center">
-
-  <div class="vc-icon">&#10007;</div>
-  <div class="vc-title">Payment Cancelled</div>
-  <p class="vc-desc">
-    You cancelled the payment. No FIRO was charged.
-    You can try again whenever you're ready.
-  </p>
-
-  <a href="{{ url_for('contributor_dashboard') }}" class="btn btn-secondary" style="width:100%;margin-top:1rem">
-    Back to Dashboard
-  </a>
-
+{% import "_icons.html" as i %}
+<div class="auth" style="max-width:440px">
+  <div class="panel status">
+    <div class="status-mark bad">{{ i.xcircle() }}</div>
+    <h1>Payment cancelled</h1>
+    <p>Nothing was charged. You can try again any time.</p>
+    <div class="btn-row" style="justify-content:center;margin-top:20px">
+      <a href="{{ url_for('contributor_dashboard') }}" class="btn btn-primary">Back to my posts</a>
+    </div>
+  </div>
 </div>
-<div></div></div>
-
-<style>
-.vc-icon{width:72px;height:72px;border-radius:50%;background:rgba(235,87,87,.1);border:2px solid #eb5757;color:#eb5757;font-size:2rem;display:flex;align-items:center;justify-content:center;margin:1.5rem auto 1rem}
-.vc-title{font-size:1.2rem;font-weight:700;color:var(--text-head);margin-bottom:.6rem}
-.vc-desc{font-size:.82rem;color:var(--text-dim);line-height:1.65}
-</style>
 {% endblock %}

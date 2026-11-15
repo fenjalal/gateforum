@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{% if p %}Edit product{% else %}New product{% endif %}{% endblock %}
+{% block content %}
+{% import "_icons.html" as i %}
+<div class="narrow">
+  {% include '_admin_tabs.html' %}
+  <h1 class="page-title" style="margin-bottom:18px">{% if p %}Edit product{% else %}New product{% endif %}</h1>
+  {% if error %}<div class="notice notice-err" role="alert">{{ error }}</div>{% endif %}
+  {% set f = request.form if request.method == 'POST' else {} %}
+  <form method="POST" enctype="multipart/form-data" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <div class="grid-2">
+      <div class="field"><label for="t">Name</label><input id="t" type="text" name="title" required maxlength="140" value="{{ f.get('title', p.title if p else '') }}"></div>
+      <div class="field"><label for="pr">Price in FIRO</label><input id="pr" type="text" inputmode="decimal" name="price_firo" required value="{{ f.get('price_firo', ('%g'|format(p.price_firo)) if p else '') }}" placeholder="2.5"></div>
+    </div>
+    <div class="field"><label for="su">Short line <span class="hint">shown on the shop card</span></label><input id="su" type="text" name="summary" maxlength="240" value="{{ f.get('summary', p.summary if p else '') }}"></div>
+    <div class="field"><label for="bd">Description <span class="hint">**bold** *italic* and links work</span></label><textarea id="bd" name="body" rows="8" maxlength="20000">{{ f.get('body', p.body if p else '') }}</textarea></div>
+
+    <div class="field">
+      <label for="im">Cover image</label>
+      {% if p and p.image %}<div class="thumbs" style="margin-bottom:6px"><img src="{{ url_for('static', filename='uploads/' ~ p.image) }}" alt=""></div>
+      <label class="check"><input type="checkbox" name="remove_image"> Remove image</label>{% endif %}
+      <input id="im" type="file" name="image" accept=".png,.jpg,.jpeg,.gif,.webp">
+    </div>
+
+    <div class="section-title" style="margin-top:26px">What the buyer gets</div>
+    <p class="hint" style="margin:10px 0 14px">Only people who paid can see these. Add a file, the text, or both.</p>
+    <div class="field">
+      <label for="fl">File <span class="hint">up to 20 MB. Stored privately, never public.</span></label>
+      {% if p and p.file_name %}<div class="row-meta" style="margin:0 0 6px"><span class="mono">{{ p.file_label }}</span><span>{{ p.file_size|filesize }}</span></div>
+      <label class="check"><input type="checkbox" name="remove_file"> Remove file</label>{% endif %}
+      <input id="fl" type="file" name="file">
+    </div>
+    <div class="field"><label for="sx">Private text <span class="hint">a license key, a link, or steps</span></label><textarea id="sx" name="secret_text" rows="4" maxlength="4000" class="mono">{{ f.get('secret_text', p.secret_text if p else '') }}</textarea></div>
+
+    <div class="btn-row" style="margin-top:6px">
+      <button type="submit" class="btn btn-primary">{% if p %}Save{% else %}Add product{% endif %}</button>
+      <label class="check"><input type="checkbox" name="active" {% if (request.method == 'POST' and f.get('active')) or (request.method != 'POST' and (not p or p.active)) %}checked{% endif %}> Show in shop</label>
+    </div>
+  </form>
+</div>
+{% endblock %}

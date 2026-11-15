@@ -161,8 +161,24 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 for d in ("instance", "static/uploads", "static/avatars"):
     os.makedirs(os.path.join(BASE_DIR, d), exist_ok=True)
 
-ADMIN_PREFIX = os.environ.get("DNet_ADMIN_PREFIX", "ctrl9x4mQ7wZ2pL")
-ADMIN_SUFFIX = os.environ.get("DNet_ADMIN_SUFFIX",  "auth8nK3vR6hJ1sT")
+def _admin_path() -> tuple[str, str]:
+    """Admin URL parts from .env, or a random pair saved in instance/ (never a value from the code)."""
+    pre = os.environ.get("DNet_ADMIN_PREFIX", "").strip("/")
+    suf = os.environ.get("DNet_ADMIN_SUFFIX", "").strip("/")
+    if pre and suf:
+        return pre, suf
+    kf = os.path.join(BASE_DIR, "instance", ".admin_path")
+    if os.path.exists(kf):
+        parts = open(kf).read().split()
+        if len(parts) == 2:
+            return parts[0], parts[1]
+    pre, suf = secrets.token_urlsafe(12), secrets.token_urlsafe(12)
+    with open(kf, "w") as fh:
+        fh.write(f"{pre} {suf}\n")
+    os.chmod(kf, 0o600)
+    return pre, suf
+
+ADMIN_PREFIX, ADMIN_SUFFIX = _admin_path()
 
 # ── FiroGate payment config ────────────────────────────────────────────────
 FIROGATE_API_KEY        = os.environ.get("FIROGATE_API_KEY", "")
@@ -173,8 +189,6 @@ FIROGATE_USE_TOR        = os.environ.get("FIROGATE_USE_TOR", "0") == "1"
 FIROGATE_TOR_PROXY      = os.environ.get("FIROGATE_TOR_PROXY", "socks5h://127.0.0.1:9050")
 FIROGATE_VERIFY_AMOUNT  = float(os.environ.get("FIROGATE_VERIFY_AMOUNT", "3.99"))
 FIROGATE_TIMEOUT_MIN    = int(os.environ.get("FIROGATE_TIMEOUT_MIN", "20"))
-# nonce store to prevent webhook replay attacks (in-memory; survives process lifetime)
-_used_nonces: dict[str, float] = {}
 
 ALL_ROLES = ["Owner", "Admin", "Moderator", "Support", "Hacktivist",
              "Reporter", "Editor", "Analyst", "Correspondent", "Guest"]
@@ -268,8 +282,8 @@ _rl_upload   = defaultdict(list)
 _rl_post     = defaultdict(list)   # POST flood guard
 _rl_register = defaultdict(list)   # registration flood guard
 _rl_webhook  = defaultdict(list)   # webhook endpoint guard
-_rl_webhook_order = defaultdict(list)  # per-order webhook replay guard
 _rl_pay      = defaultdict(list)   # payment-creation flood guard (per token)
+_rl_status   = defaultdict(list)   # payment status polling guard (per token)
 
 def _chk(store, ip, limit, window) -> bool:
     now = time.time(); cut = now - window
@@ -322,7 +336,7 @@ def _sec(r):
 
     if "/static/uploads/" in p or "/static/avatars/" in p:
         h["Cache-Control"] = "private, no-store"
-    elif "/static/css/" in p or "/static/fonts/" in p:
+    elif r.status_code == 200 and ("/static/css/" in p or "/static/fonts/" in p or "/static/js/" in p):
         h["Cache-Control"] = "public, max-age=86400"
     else:
         h["Cache-Control"] = "no-store"
@@ -401,9 +415,19 @@ def _detect_network():
     g.via_tor   = host.endswith(".onion") or host in ("127.0.0.1", "::1")
     g.site_host = host
 
+def _client_key() -> str:
+    """Rate-limit key. Behind Tor every visitor is 127.0.0.1, so use the session cookie there."""
+    ip = request.remote_addr or "unknown"
+    if ip in ("127.0.0.1", "::1"):
+        sid = request.cookies.get("dn_sid") or request.cookies.get("dn_token") or ""
+        if sid:
+            return "s:" + hashlib.sha256(sid.encode()).hexdigest()[:24]
+        return "loopback"
+    return ip
+
 @app.before_request
 def _guard():
-    ip = request.remote_addr or "unknown"
+    ip = _client_key()
 
     # Webhook endpoint: skip browser-oriented guards; use dedicated rate limiting
     if request.path == "/webhook/firogate":
@@ -411,8 +435,8 @@ def _guard():
             abort(429)
         return
 
-    # Global page rate limit
-    if _chk(_rl_page, ip, 150, 60):
+    # Global page rate limit (the shared cookieless Tor bucket gets more room)
+    if _chk(_rl_page, ip, 1500 if ip == "loopback" else 150, 60):
         abort(429)
 
     # POST flood guard (separate tighter limit)
@@ -540,6 +564,47 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_firo_token ON firo_payments(token_id);
         CREATE INDEX IF NOT EXISTS idx_firo_order ON firo_payments(order_id);
+        CREATE TABLE IF NOT EXISTS webhook_nonces (
+            nonce TEXT PRIMARY KEY,
+            seen  INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS products (
+            id          TEXT PRIMARY KEY,
+            title       TEXT NOT NULL,
+            summary     TEXT NOT NULL DEFAULT '',
+            body        TEXT NOT NULL DEFAULT '',
+            price_firo  REAL NOT NULL,
+            image       TEXT NOT NULL DEFAULT '',
+            file_name   TEXT NOT NULL DEFAULT '',
+            file_label  TEXT NOT NULL DEFAULT '',
+            file_size   INTEGER NOT NULL DEFAULT 0,
+            secret_text TEXT NOT NULL DEFAULT '',
+            active      INTEGER NOT NULL DEFAULT 1,
+            sales       INTEGER NOT NULL DEFAULT 0,
+            created     TEXT NOT NULL,
+            updated     TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_prod_active ON products(active, created DESC);
+        CREATE TABLE IF NOT EXISTS purchases (
+            id          TEXT PRIMARY KEY,
+            product_id  TEXT NOT NULL,
+            token_id    TEXT NOT NULL,
+            payment_id  TEXT NOT NULL DEFAULT '',
+            amount_firo REAL NOT NULL DEFAULT 0,
+            txid        TEXT NOT NULL DEFAULT '',
+            created     TEXT NOT NULL,
+            UNIQUE(product_id, token_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_purchase_tok ON purchases(token_id);
+        CREATE TABLE IF NOT EXISTS product_ratings (
+            product_id TEXT NOT NULL,
+            token_id   TEXT NOT NULL,
+            stars      INTEGER NOT NULL,
+            note       TEXT NOT NULL DEFAULT '',
+            created    TEXT NOT NULL,
+            updated    TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (product_id, token_id)
+        );
         CREATE TABLE IF NOT EXISTS chat (
             id          TEXT PRIMARY KEY,
             message     TEXT NOT NULL,
@@ -644,6 +709,12 @@ def init_db():
         ("chat",    "reply_to_nick","TEXT NOT NULL DEFAULT ''"),
         ("firo_payments", "confirmed_at", "TEXT NOT NULL DEFAULT ''"),
         ("firo_payments", "txid",         "TEXT NOT NULL DEFAULT ''"),
+        ("firo_payments", "fg_payment_id", "TEXT NOT NULL DEFAULT ''"),
+        ("firo_payments", "expires_at",    "TEXT NOT NULL DEFAULT ''"),
+        ("firo_payments", "amount_received", "REAL NOT NULL DEFAULT 0"),
+        ("firo_payments", "refunded_at",   "TEXT NOT NULL DEFAULT ''"),
+        ("firo_payments", "kind",          "TEXT NOT NULL DEFAULT 'verify'"),
+        ("firo_payments", "product_id",    "TEXT NOT NULL DEFAULT ''"),
         ("posts", "reaction_fire",   "INTEGER NOT NULL DEFAULT 0"),
         ("posts", "reaction_skull",  "INTEGER NOT NULL DEFAULT 0"),
         ("posts", "reaction_eye",    "INTEGER NOT NULL DEFAULT 0"),
@@ -678,7 +749,8 @@ def init_db():
         )
     # Default settings
     for k, v in [("site_title","GateForum"),("site_tagline","Independent · Anonymous · Uncensored"),
-                 ("posts_per_page","10"),("maintenance","0")]:
+                 ("posts_per_page","10"),("maintenance","0"),
+                 ("shop_enabled","1"),("shop_visibility","everyone")]:
         db.execute("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)", (k, v))
     db.commit()
 
@@ -837,7 +909,7 @@ def process_post_image(data: bytes) -> bytes:
     return out.getvalue()
 
 def save_images(files: list) -> list:
-    ip = request.remote_addr or "unknown"
+    ip = _client_key()
     saved = []
     if _chk(_rl_upload, ip, 20, 300): return saved
     for f in files:
@@ -972,6 +1044,13 @@ def strip_md_filter(text: str) -> str:
     s = re.sub(r'\n+',           ' ',   s).strip()
     return s
 
+@app.template_filter("filesize")
+def filesize_filter(n) -> str:
+    n = int(n or 0)
+    if n >= 1048576:
+        return f"{n / 1048576:.1f} MB"
+    return f"{max(1, round(n / 1024))} KB"
+
 @app.template_filter("from_json")
 def from_json_filter(s: str) -> list:
     try: return json.loads(s or "[]")
@@ -1089,7 +1168,7 @@ def index():
 
 def _ip_hash() -> str:
     """One-way hash of IP+secret — anonymous dedup, not reversible."""
-    ip  = request.remote_addr or "unknown"
+    ip  = _client_key()
     sal = (SECRET_KEY[:16].hex() if isinstance(SECRET_KEY, bytes)
            else hashlib.sha256(str(SECRET_KEY).encode()).hexdigest()[:16])
     return hashlib.sha256(f"{sal}:{ip}".encode()).hexdigest()[:32]
@@ -1471,7 +1550,7 @@ def _cleanup_replied_messages(db):
 @app.route("/chat", methods=["GET", "POST"])
 def chat_page():
     db = get_db()
-    ip = request.remote_addr or "unknown"
+    ip = _client_key()
     
     # Rate limit: 30 messages per minute
     if request.method == "POST" and _chk(_rl_post, ip, 30, 60):
@@ -1631,7 +1710,7 @@ def chat_img(msg_id):
 
 @app.route("/search")
 def search():
-    ip = request.remote_addr or "unknown"
+    ip = _client_key()
     if _chk(_rl_search, ip, 20, 60): abort(429)
     q    = request.args.get("q","").strip()[:200]
     page = max(1, request.args.get("page", 1, type=int))
@@ -1688,7 +1767,7 @@ def token_login():
     ).fetchall()
     
     if request.method == "POST":
-        ip = request.remote_addr or "unknown"
+        ip = _client_key()
         if _chk(_rl_login, ip, 5, 300):
             error = "Too many attempts. Please wait 5 minutes."
         elif not _csrf_ok():
@@ -1700,9 +1779,8 @@ def token_login():
                 # If this is a pool token being claimed, mark it as claimed
                 if row["is_pool"] == 1 and row["claimed"] == 0:
                     db.execute(
-                        "UPDATE tokens SET claimed=1, claimed_at=?, claimed_by=? WHERE id=?",
+                        "UPDATE tokens SET claimed=1, claimed_at=?, claimed_by='' WHERE id=?",
                         (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                         ip,
                          row["id"])
                     )
                     db.commit()
@@ -1846,7 +1924,7 @@ def self_register():
     error = None
 
     if request.method == "POST":
-        ip = request.remote_addr or "unknown"
+        ip = _client_key()
         if _chk(_rl_register, ip, 5, 600):
             error = "Too many registration attempts. Please wait a few minutes."
         elif not _csrf_ok():
@@ -1885,7 +1963,7 @@ def self_register():
                         " claimed_name, verified) "
                         "VALUES (?,?,?,?,?,?,?,0,'',?,0,1,?,?,?,0)",
                         (tok_id, display_name, tok_hash, "", "self-registered", "", "",
-                         now_str, now_str, request.remote_addr or "unknown",
+                         now_str, now_str, "",
                          display_name)
                     )
                     db.commit()
@@ -1913,179 +1991,191 @@ def token_logout():
 
 # ── FiroGate helpers ───────────────────────────────────────────────────────
 
-def _firogate_request(endpoint: str, payload: dict, method: str = "POST") -> dict:
-    """
-    Make a request to GateForum payment API.
-    Auto-detects whether to use Tor or clearnet:
-      - If FIROGATE_ONION_URL is set → always use Tor + onion URL
-      - If FIROGATE_USE_TOR=1 → use Tor + clearnet URL
-      - If request came from a .onion host → try Tor if available, else clearnet
-      - Otherwise → clearnet directly
-    """
-    if not FIROGATE_API_KEY:
-        raise RuntimeError("FIROGATE_API_KEY not configured — set it in .env")
+_CONFIRMED_STATES = {"confirmed"}
+_AMOUNT_EPSILON   = 1e-8
 
-    # Decide Tor vs clearnet
-    request_via_onion = (
-        hasattr(request, "host") and
-        (request.host or "").endswith(".onion")
-    )
-    use_tor = FIROGATE_USE_TOR or bool(FIROGATE_ONION_URL) or request_via_onion
 
-    # Choose base URL:
-    # 1. FIROGATE_ONION_URL set → use it (Tor)
-    # 2. request came via .onion → use clearnet URL but route through Tor proxy
-    # 3. Otherwise → clearnet directly
+class GatewayError(RuntimeError):
+    """FiroGate could not be reached or answered with an error."""
+
+
+def _now() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _firogate_base() -> tuple[str, bool]:
+    """Pick the FiroGate URL and whether to send the request through Tor."""
     if FIROGATE_ONION_URL:
-        base = FIROGATE_ONION_URL.rstrip("/")
-    else:
-        base = FIROGATE_BASE_URL.rstrip("/")   # https://api.firogate.com
+        return FIROGATE_ONION_URL.rstrip("/"), True
+    return FIROGATE_BASE_URL.rstrip("/"), FIROGATE_USE_TOR
 
-    url     = f"{base}{endpoint}"
-    headers = {"Content-Type": "application/json", "X-API-Key": FIROGATE_API_KEY}
-    proxies = ({"http": FIROGATE_TOR_PROXY, "https": FIROGATE_TOR_PROXY}
-               if use_tor else None)
-    timeout = 30 if use_tor else 20
 
-    app.logger.info("GateForum API → %s %s  tor=%s  proxies=%s", method, url, use_tor, bool(proxies))
-
+def _firogate_request(endpoint: str, payload: dict | None = None, method: str = "POST") -> dict:
+    """Call the FiroGate API. Never disables TLS checks and never leaks the key."""
+    if not FIROGATE_API_KEY:
+        raise GatewayError("FIROGATE_API_KEY is not set")
     try:
         import requests as _req
     except ImportError:
-        raise RuntimeError("The `requests` library is required. Run: pip install requests")
+        raise GatewayError("the requests library is missing")
 
-    # Only disable SSL verify for http:// URLs (e.g. .onion has no HTTPS).
-    # For https:// clearnet APIs through Tor, still verify — the SOCKS proxy
-    # passes the hostname through for cert validation.
-    _verify = url.startswith("https://")
+    base, use_tor = _firogate_base()
+    url     = f"{base}{endpoint}"
+    headers = {"Accept": "application/json", "X-API-Key": FIROGATE_API_KEY}
+    proxies = {"http": FIROGATE_TOR_PROXY, "https": FIROGATE_TOR_PROXY} if use_tor else None
+    timeout = 45 if use_tor else 20
     try:
         if method == "GET":
-            r = _req.get(url, headers=headers, proxies=proxies,
-                         timeout=timeout, verify=_verify)
+            r = _req.get(url, headers=headers, proxies=proxies, timeout=timeout)
         else:
-            r = _req.post(url, json=payload, headers=headers,
-                          proxies=proxies, timeout=timeout, verify=_verify)
-    except _req.exceptions.SSLError as e:
-        if _verify:
-            app.logger.warning("GateForum SSL error on %s, retrying without verify: %s", url[:50], e)
-            if method == "GET":
-                r = _req.get(url, headers=headers, proxies=proxies, timeout=timeout, verify=False)
-            else:
-                r = _req.post(url, json=payload, headers=headers,
-                              proxies=proxies, timeout=timeout, verify=False)
-        else:
-            raise RuntimeError(f"SSL error connecting to GateForum payment API: {e}")
-    except _req.exceptions.ConnectionError as e:
-        # If Tor failed and we have a clearnet fallback, try it
-        if use_tor and FIROGATE_BASE_URL and base != FIROGATE_BASE_URL.rstrip("/"):
-            app.logger.warning("GateForum Tor connection failed, falling back to clearnet: %s", e)
-            fallback_url = FIROGATE_BASE_URL.rstrip("/") + endpoint
-            try:
-                if method == "GET":
-                    r = _req.get(fallback_url, headers=headers, timeout=20, verify=True)
-                else:
-                    r = _req.post(fallback_url, json=payload, headers=headers,
-                                  timeout=20, verify=True)
-            except Exception as e2:
-                raise RuntimeError(f"GateForum unreachable (Tor + clearnet both failed): {e2}")
-        else:
-            raise RuntimeError(f"Cannot reach GateForum ({base}): {e}")
+            r = _req.post(url, json=payload or {}, headers=headers, proxies=proxies, timeout=timeout)
     except _req.exceptions.Timeout:
-        raise RuntimeError(f"GateForum request timed out after {timeout}s")
-    except Exception as e:
-        raise RuntimeError(f"GateForum request failed: {e}")
-
-    app.logger.info("GateForum ← HTTP %s  body=%s", r.status_code, r.text[:300])
+        raise GatewayError(f"timeout after {timeout}s")
+    except _req.exceptions.RequestException as exc:
+        raise GatewayError(f"{type(exc).__name__}")
 
     if not r.ok:
-        raise RuntimeError(f"GateForum returned HTTP {r.status_code}: {r.text[:200]}")
-
+        app.logger.warning("FiroGate %s %s -> HTTP %s", method, endpoint.split("?")[0], r.status_code)
+        raise GatewayError(f"HTTP {r.status_code}")
     try:
-        return r.json()
-    except Exception:
-        raise RuntimeError(f"GateForum returned non-JSON: {r.text[:200]}")
+        data = r.json()
+    except ValueError:
+        raise GatewayError("non-JSON response")
+    if not isinstance(data, dict):
+        raise GatewayError("unexpected response")
+    return data
 
 
-def _clean_nonces():
-    cutoff = time.time() - 600
-    for k in [k for k, v in _used_nonces.items() if v < cutoff]:
-        del _used_nonces[k]
-
-
-def _verify_webhook_sig(payload: dict, signature: str, timestamp: int) -> bool:
-    """
-    Validate GateForum webhook signature.
-    If FIROGATE_WEBHOOK_SECRET is not set, skip HMAC and only validate timestamp.
-    """
-    # Timestamp check always enforced
-    if abs(time.time() - timestamp) > 300:
-        app.logger.warning("GateForum webhook: stale timestamp %s (now=%s)", timestamp, int(time.time()))
+def _paid_enough(received, expected) -> bool:
+    try:
+        return float(received) + _AMOUNT_EPSILON >= float(expected)
+    except (TypeError, ValueError):
         return False
 
-    # Nonce replay check
-    nonce = payload.get("nonce", "")
-    _clean_nonces()
-    if nonce and nonce in _used_nonces:
-        app.logger.warning("GateForum webhook: replayed nonce %s", nonce)
+
+def _grant_badge(db, pmt, *, txid: str, received: float, source: str) -> bool:
+    """Mark a payment confirmed and give what it paid for. Returns True if this call did it."""
+    cur = db.execute(
+        "UPDATE firo_payments SET status='confirmed', confirmed_at=?, txid=?, amount_received=? "
+        "WHERE id=? AND status!='confirmed'",
+        (_now(), txid[:128], float(received or 0), pmt["id"])
+    )
+    if (pmt["kind"] or "verify") == "product":
+        added = db.execute(
+            "INSERT OR IGNORE INTO purchases (id, product_id, token_id, payment_id, amount_firo, txid, created) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (uuid.uuid4().hex, pmt["product_id"], pmt["token_id"], pmt["id"],
+             float(received or 0), txid[:128], _now())
+        )
+        if added.rowcount:
+            db.execute("UPDATE products SET sales = sales + 1 WHERE id=?", (pmt["product_id"],))
+    else:
+        db.execute("UPDATE tokens SET verified=1 WHERE id=?", (pmt["token_id"],))
+    db.commit()
+    if cur.rowcount:
+        log_action("firo_payment_confirmed", f"order={pmt['order_id']} via={source}")
+    return bool(cur.rowcount)
+
+
+def _apply_gateway_state(db, pmt, data: dict, source: str) -> str:
+    """Apply a FiroGate payment object to our record. Returns our new status."""
+    if data.get("payment_id") and pmt["fg_payment_id"] and data["payment_id"] != pmt["fg_payment_id"]:
+        app.logger.warning("FiroGate payment id mismatch for order %s", pmt["order_id"])
+        return pmt["status"]
+    if data.get("order_id") and data["order_id"] != pmt["order_id"]:
+        app.logger.warning("FiroGate order id mismatch for order %s", pmt["order_id"])
+        return pmt["status"]
+
+    status = str(data.get("status") or "").lower()
+    if status in _CONFIRMED_STATES:
+        txid     = str(data.get("txid") or "")
+        received = data.get("amount_received")
+        if received is None:
+            received = data.get("amount_firo")
+        if not txid:
+            return pmt["status"]
+        if not _paid_enough(received, pmt["amount_firo"]):
+            app.logger.warning("FiroGate underpaid order %s: %s < %s", pmt["order_id"], received, pmt["amount_firo"])
+            db.execute("UPDATE firo_payments SET status='underpaid', amount_received=? WHERE id=? AND status='pending'",
+                       (float(received or 0), pmt["id"]))
+            db.commit()
+            return "underpaid"
+        _grant_badge(db, pmt, txid=txid, received=float(received), source=source)
+        return "confirmed"
+    if status in ("expired", "cancelled") and pmt["status"] == "pending":
+        db.execute("UPDATE firo_payments SET status=? WHERE id=? AND status='pending'", (status, pmt["id"]))
+        db.commit()
+        return status
+    return pmt["status"]
+
+
+def _remember_nonce(nonce: str) -> bool:
+    """Store a webhook nonce. False if it was already used (replay)."""
+    db = get_db()
+    db.execute("DELETE FROM webhook_nonces WHERE seen < ?", (int(time.time()) - 900,))
+    try:
+        db.execute("INSERT INTO webhook_nonces (nonce, seen) VALUES (?, ?)", (nonce[:128], int(time.time())))
+        db.commit()
+        return True
+    except sqlite3.IntegrityError:
+        db.rollback()
         return False
 
-    if not FIROGATE_WEBHOOK_SECRET:
-        # No secret configured — REJECT all webhooks to prevent badge bypass
-        app.logger.error("GateForum webhook: FIROGATE_WEBHOOK_SECRET not set — rejecting webhook for security")
-        return False
 
+def _webhook_sig_ok(raw: bytes, payload: dict, signature: str) -> bool:
+    """FiroGate signs sorted, compact JSON. Check the exact bytes first."""
+    if not FIROGATE_WEBHOOK_SECRET or not signature:
+        return False
+    key = FIROGATE_WEBHOOK_SECRET.encode()
+    sig = signature.strip().lower()
+    if hmac.compare_digest(hmac.new(key, raw, hashlib.sha256).hexdigest(), sig):
+        return True
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    expected  = hmac.new(FIROGATE_WEBHOOK_SECRET.encode(), canonical, hashlib.sha256).hexdigest()
-    ok = hmac.compare_digest(expected, signature)
-    if not ok:
-        app.logger.warning("GateForum webhook: HMAC mismatch — expected=%s got=%s", expected[:16], signature[:16])
-    if ok and nonce:
-        _used_nonces[nonce] = time.time()
-    return ok
+    return hmac.compare_digest(hmac.new(key, canonical, hashlib.sha256).hexdigest(), sig)
 
 
 def _get_site_base() -> str:
-    """
-    Returns the correct base URL for payment redirects.
-    Priority:
-      1. SITE_BASE_URL env var (explicit, always wins)
-      2. If request.host contains .onion → use http://<host>
-      3. If X-Forwarded-Proto header present → use that proto
-      4. Fallback: http://request.host
-    Never returns 127.0.0.1 or localhost — that would break payment redirects.
-    """
-    # 1. Explicit env var
+    """Public base URL used for FiroGate redirects."""
     base = os.environ.get("SITE_BASE_URL", "").rstrip("/")
     if base:
         return base
-
     host = request.host or ""
-
-    # 2. Onion address detected from request — always HTTP, never HTTPS
     if host.endswith(".onion"):
         return f"http://{host}"
-
-    # 3. Guard against localhost leaking into payment URLs
     if host in ("127.0.0.1", "localhost", "::1") or host.startswith("127."):
-        # Try X-Forwarded-Host as fallback (set by nginx/Tor hidden service proxy)
-        fwd_host = request.headers.get("X-Forwarded-Host", "")
-        if fwd_host and fwd_host not in ("127.0.0.1", "localhost"):
-            host = fwd_host
-        else:
-            # Can't determine real host — log warning and return empty
-            # so FiroGate can still work if SITE_BASE_URL is set
-            app.logger.warning(
-                "_get_site_base: cannot determine public host — "
-                "set SITE_BASE_URL in .env"
-            )
-            return ""
+        app.logger.warning("Set SITE_BASE_URL in .env so FiroGate can send buyers back")
+        return ""
+    proto = request.headers.get("X-Forwarded-Proto", request.scheme)
+    return f"{'https' if proto == 'https' else 'http'}://{host}"
 
-    # 4. Clearnet — respect forwarded proto
-    proto = request.headers.get("X-Forwarded-Proto", "http")
-    return f"{proto}://{host}"
+
+def _pending_payment(db, token_id: str, kind: str = "verify", product_id: str = ""):
+    """Latest pending payment of this kind for this token that has not expired yet."""
+    row = db.execute(
+        "SELECT * FROM firo_payments WHERE token_id=? AND status='pending' AND kind=? AND product_id=? "
+        "ORDER BY created DESC LIMIT 1", (token_id, kind, product_id)
+    ).fetchone()
+    if not row:
+        return None
+    exp = row["expires_at"]
+    if exp:
+        try:
+            exp_dt = datetime.fromisoformat(exp.replace("Z", "+00:00"))
+            if exp_dt.tzinfo is not None:
+                exp_dt = exp_dt.astimezone().replace(tzinfo=None)
+            if exp_dt <= datetime.now():
+                db.execute("UPDATE firo_payments SET status='expired' WHERE id=? AND status='pending'", (row["id"],))
+                db.commit()
+                return None
+        except ValueError:
+            pass
+    return row
 
 
 # ── Firo payment routes ────────────────────────────────────────────────────
+
+_PAY_DOWN_MSG = "Payments are not available right now. Please try again later."
+
 
 @app.route("/verify/pay", methods=["POST"])
 @require_poster
@@ -2094,189 +2184,118 @@ def firo_pay():
     if _is_admin():
         return redirect(url_for("admin_dashboard"))
 
-    # Always re-fetch fresh from DB
-    raw = request.cookies.get("dn_token", "")
-    tok = _get_token_row(raw)
+    tok = _current_tok()
     if not tok:
         return redirect(url_for("token_login"))
-
-    if _chk(_rl_pay, tok["id"], 5, 600):
-        app.logger.warning("firo_pay: rate limited tok=%s", tok["id"][:8])
-        return render_template("error.html", code=429,
-                               msg="Too many payment attempts. Please wait a few minutes and try again."), 429
-
-    # Already verified — never charge again
     if tok["verified"]:
         return redirect(url_for("contributor_dashboard"))
-
+    if _chk(_rl_pay, tok["id"], 5, 600):
+        return render_template("error.html", code=429,
+                               msg="Too many tries. Please wait a few minutes."), 429
     if not FIROGATE_API_KEY:
-        app.logger.error("firo_pay: FIROGATE_API_KEY is empty/not set in environment")
-        return render_template("error.html", code=503,
-                               msg="Payment gateway not configured — FIROGATE_API_KEY missing. Contact admin."), 503
+        app.logger.error("firo_pay: FIROGATE_API_KEY is not set")
+        return render_template("error.html", code=503, msg=_PAY_DOWN_MSG), 503
 
-    db   = get_db()
-    base = _get_site_base()
-
-    # Reuse ONLY if there's a pending checkout that was NOT cancelled
-    # (cancelled payments get a fresh checkout on next attempt)
-    existing = db.execute(
-        "SELECT checkout_url FROM firo_payments "
-        "WHERE token_id=? AND status='pending' "
-        "ORDER BY created DESC LIMIT 1",
-        (tok["id"],)
-    ).fetchone()
+    db = get_db()
+    existing = _pending_payment(db, tok["id"])
     if existing and existing["checkout_url"]:
-        app.logger.info("firo_pay: reusing pending checkout for tok=%s", tok["id"][:8])
         return redirect(existing["checkout_url"])
 
-    order_id = f"VERIFY-{tok['id'][:12]}-{uuid.uuid4().hex[:8]}"
-    app.logger.info("firo_pay: creating order=%s amount=%s", order_id, FIROGATE_VERIFY_AMOUNT)
+    base = _get_site_base()
+    if not base:
+        return render_template("error.html", code=503, msg=_PAY_DOWN_MSG), 503
 
+    order_id = f"VERIFY-{tok['id'][:12]}-{uuid.uuid4().hex[:8]}"
     try:
         result = _firogate_request("/api/payments/create", {
-            "amount_firo":      FIROGATE_VERIFY_AMOUNT,
-            "order_id":         order_id,
-            "order_description":"Verified badge — GateForum",
-            "success_url":      f"{base}/verify/success",
-            "cancel_url":       f"{base}/verify/cancel",
-            "timeout_minutes":  FIROGATE_TIMEOUT_MIN,
+            "amount_firo":       FIROGATE_VERIFY_AMOUNT,
+            "order_id":          order_id,
+            "order_description": "Verified badge",
+            "success_url":       f"{base}/verify/success",
+            "cancel_url":        f"{base}/verify/cancel",
+            "timeout_minutes":   FIROGATE_TIMEOUT_MIN,
         })
-    except RuntimeError as exc:
-        app.logger.error("firo_pay failed: %s", exc)
-        return render_template("error.html", code=503,
-                               msg=f"Payment gateway error: {exc}"), 503
-    except Exception as exc:
-        app.logger.error("firo_pay unexpected: %s", exc)
-        return render_template("error.html", code=503,
-                               msg="Unexpected payment gateway error. Check server logs."), 503
+    except GatewayError as exc:
+        app.logger.error("firo_pay: %s", exc)
+        return render_template("error.html", code=503, msg=_PAY_DOWN_MSG), 503
 
-    checkout_url = result.get("checkout_url", "")
-    if not checkout_url:
-        app.logger.error("GateForum no checkout_url in response: %s", result)
-        return render_template("error.html", code=503,
-                               msg=f"GateForum returned no checkout_url. Response: {str(result)[:200]}"), 503
+    checkout_url = str(result.get("checkout_url") or "")
+    fg_id        = str(result.get("payment_id") or "")
+    if not checkout_url.startswith(("https://", "http://")) or not fg_id:
+        app.logger.error("firo_pay: FiroGate answer had no checkout_url or payment_id")
+        return render_template("error.html", code=503, msg=_PAY_DOWN_MSG), 503
 
     db.execute(
-        "INSERT OR IGNORE INTO firo_payments "
-        "(id, token_id, order_id, amount_firo, status, checkout_url, created) "
-        "VALUES (?, ?, ?, ?, 'pending', ?, ?)",
-        (uuid.uuid4().hex, tok["id"], order_id, FIROGATE_VERIFY_AMOUNT,
-         checkout_url, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        "INSERT INTO firo_payments (id, token_id, order_id, fg_payment_id, amount_firo, status, "
+        "checkout_url, expires_at, created) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
+        (uuid.uuid4().hex, tok["id"], order_id, fg_id[:64], FIROGATE_VERIFY_AMOUNT,
+         checkout_url, str(result.get("expires_at") or "")[:40], _now())
     )
     db.commit()
-    log_action("firo_payment_initiated", f"order={order_id} tok={tok['id'][:8]}")
+    log_action("firo_payment_started", f"order={order_id}")
     return redirect(checkout_url)
+
+
+def _check_pending(tok, kind: str = "verify", product_id: str = "") -> str:
+    """Ask FiroGate about this token's open payment. Returns our status for it."""
+    db  = get_db()
+    pmt = db.execute(
+        "SELECT * FROM firo_payments WHERE token_id=? AND status IN ('pending','underpaid') "
+        "AND kind=? AND product_id=? ORDER BY created DESC LIMIT 1", (tok["id"], kind, product_id)
+    ).fetchone()
+    if not pmt or not pmt["fg_payment_id"] or not FIROGATE_API_KEY:
+        return ""
+    if _chk(_rl_status, tok["id"], 20, 60):
+        return pmt["status"]
+    try:
+        data = _firogate_request(f"/api/payments/{pmt['fg_payment_id']}", method="GET")
+    except GatewayError as exc:
+        app.logger.info("payment check: %s", exc)
+        return pmt["status"]
+    return _apply_gateway_state(db, pmt, data, "status")
 
 
 @app.route("/verify/success")
 @require_poster
 def firo_success():
-    """
-    Landing page after FiroGate redirects user back.
-    DOES NOT grant badge — badge is granted ONLY via:
-      1. Webhook POST /webhook/firogate (server-to-server, HMAC verified)
-      2. firo_status polling (polls FiroGate API directly with our API key)
-    URL query params are NEVER trusted to grant verified status.
-    """
+    """Landing page after checkout. Never grants anything from URL params."""
     if _is_admin():
         return redirect(url_for("admin_dashboard"))
-
-    raw = request.cookies.get("dn_token", "")
-    tok = _get_token_row(raw)
+    tok = _current_tok()
     if not tok:
         return redirect(url_for("token_login"))
-
-    # order_id from URL — only used for display/polling, never for granting badge
-    order_id = request.args.get("order_id") or request.args.get("payment_id") or ""
-
-    app.logger.info("firo_success: tok=%s order_id=%s (no badge granted from URL)",
-                    tok["id"][:8], order_id)
-
-    # Display-only: if already confirmed in DB, show the receipt details.
-    # Purely informational — badge status itself still only ever comes from
-    # tok_row.verified, set exclusively by the webhook/poll paths above.
+    if not tok["verified"] and _check_pending(tok) == "confirmed":
+        tok = _current_tok()
     payment = None
     if tok["verified"]:
         payment = get_db().execute(
-            "SELECT amount_firo, txid, confirmed_at FROM firo_payments "
-            "WHERE token_id=? AND status='confirmed' ORDER BY confirmed_at DESC LIMIT 1",
+            "SELECT amount_firo, amount_received, txid, confirmed_at FROM firo_payments "
+            "WHERE token_id=? AND status='confirmed' AND kind='verify' ORDER BY confirmed_at DESC LIMIT 1",
             (tok["id"],)
         ).fetchone()
-
-    return render_template("verify_success.html", tok_row=tok, order_id=order_id, payment=payment)
+    open_payment = None
+    if not tok["verified"]:
+        open_payment = get_db().execute(
+            "SELECT status FROM firo_payments WHERE token_id=? AND status IN ('pending','underpaid') "
+            "AND kind='verify' ORDER BY created DESC LIMIT 1", (tok["id"],)
+        ).fetchone()
+    return render_template("verify_success.html", tok_row=tok, payment=payment,
+                           open_payment=open_payment, verify_amount=FIROGATE_VERIFY_AMOUNT)
 
 
 @app.route("/verify/status")
 @require_poster
 def firo_status():
-    """
-    Polled every 5s by verify_success page.
-    Returns {verified: true} as soon as tokens.verified=1 in DB.
-    Also tries to confirm via firo_payments if a pending record exists.
-    """
+    """Polled by the success page."""
     if _is_admin():
         return {"verified": False}
-
-    raw = request.cookies.get("dn_token", "")
-    tok = _get_token_row(raw)
+    tok = _current_tok()
     if not tok:
         return {"verified": False}
-
-    # Already verified in DB — return immediately
     if tok["verified"]:
         return {"verified": True}
-
-    # No API key configured — can't poll FiroGate
-    if not FIROGATE_API_KEY:
-        return {"verified": False}
-
-    db  = get_db()
-
-    # Look for ANY pending payment for this token
-    pmt = db.execute(
-        "SELECT * FROM firo_payments WHERE token_id=? AND status='pending' "
-        "ORDER BY created DESC LIMIT 1",
-        (tok["id"],)
-    ).fetchone()
-
-    if not pmt:
-        # No pending record — webhook may have already been handled without a record
-        # Re-check the token directly (race condition safety)
-        fresh = db.execute(
-            "SELECT verified FROM tokens WHERE id=?", (tok["id"],)
-        ).fetchone()
-        if fresh and fresh["verified"]:
-            return {"verified": True}
-        return {"verified": False}
-
-    # Poll FiroGate directly for this order
-    try:
-        result = _firogate_request(
-            f"/api/payments/{pmt['order_id']}", {}, method="GET"
-        )
-    except Exception as exc:
-        app.logger.info("firo_status poll error (non-fatal): %s", exc)
-        return {"verified": False}
-
-    status = (result.get("status") or result.get("payment_status") or "").lower()
-    app.logger.info("firo_status poll order=%s firogate_status=%s", pmt["order_id"], status)
-
-    if status in ("confirmed", "paid", "completed", "success", "complete"):
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # Use conditional UPDATE — safe against race conditions from parallel polls
-        db.execute(
-            "UPDATE firo_payments SET status='confirmed', confirmed_at=? "
-            "WHERE order_id=? AND status!='confirmed'",
-            (now, pmt["order_id"])
-        )
-        # verified=1 is idempotent — safe to run multiple times
-        db.execute("UPDATE tokens SET verified=1 WHERE id=?", (tok["id"],))
-        db.commit()
-        log_action("firo_status_confirmed",
-                   f"order={pmt['order_id']} tok={tok['id'][:8]} badge granted via poll")
-        return {"verified": True}
-
-    return {"verified": False}
+    state = _check_pending(tok)
+    return {"verified": state == "confirmed", "state": state}
 
 
 @app.route("/verify/cancel")
@@ -2284,107 +2303,484 @@ def firo_status():
 def firo_cancel():
     if _is_admin():
         return redirect(url_for("admin_dashboard"))
-
-    # Mark any pending payment from FiroGate cancel redirect as cancelled
-    # so firo_pay creates a fresh checkout next time instead of reusing old URL
-    payment_id = request.args.get("payment_id", "")
-    raw        = request.cookies.get("dn_token", "")
-    tok        = _get_token_row(raw)
-
-    if tok and payment_id:
+    tok   = _current_tok()
+    fg_id = request.args.get("payment_id", "")[:64]
+    if tok and fg_id:
         db = get_db()
-        # Mark by FiroGate payment_id (stored in checkout_url) OR order_id
         db.execute(
             "UPDATE firo_payments SET status='cancelled' "
-            "WHERE token_id=? AND status='pending' "
-            "AND (order_id LIKE ? OR checkout_url LIKE ?)",
-            (tok["id"], f"%{payment_id}%", f"%{payment_id}%")
-        )
-        # Also mark ALL pending for this token as cancelled — clean slate
-        db.execute(
-            "UPDATE firo_payments SET status='cancelled' "
-            "WHERE token_id=? AND status='pending'",
-            (tok["id"],)
+            "WHERE token_id=? AND fg_payment_id=? AND status='pending'",
+            (tok["id"], fg_id)
         )
         db.commit()
-        app.logger.info("firo_cancel: marked pending payments cancelled for tok=%s pid=%s",
-                        tok["id"][:8], payment_id)
-
     return render_template("verify_cancel.html")
+
+
+_WEBHOOK_EVENTS = {"payment.confirmed", "payment.expired", "payment.cancelled", "payment.refunded"}
 
 
 @app.route("/webhook/firogate", methods=["POST"])
 def firo_webhook():
-    raw = request.get_data()
+    raw = request.get_data(cache=False)
+    if len(raw) > 64 * 1024:
+        return "", 413
     try:
         payload = json.loads(raw)
-    except Exception:
-        return "", 400
-
-    event     = request.headers.get("X-FiroGate-Event", "")
-    signature = request.headers.get("X-FiroGate-Signature", "")
-    nonce     = request.headers.get("X-FiroGate-Nonce", "")
-    try:
-        timestamp = int(request.headers.get("X-FiroGate-Timestamp", "0"))
     except ValueError:
         return "", 400
-
-    if nonce and "nonce" not in payload:
-        payload["nonce"] = nonce
-    if "timestamp" not in payload:
-        payload["timestamp"] = timestamp
-
-    if not _verify_webhook_sig(payload, signature, timestamp):
-        app.logger.warning("GateForum webhook bad sig from %s", request.remote_addr)
-        return "", 403
-
-    if event not in ("payment.confirmed", "payment.expired", "payment.cancelled"):
-        return "", 200  # unknown/future event type — ack without action
-
-    order_id = payload.get("order_id", "")
-    if not order_id:
+    if not isinstance(payload, dict):
         return "", 400
 
-    # Per-order rate limit (same order_id max 5 times per 10 minutes)
-    if _chk(_rl_webhook_order, order_id, 5, 600):
-        app.logger.warning("GateForum webhook: order %s rate limited", order_id[:20])
-        return "", 429
+    signature = request.headers.get("X-FiroGate-Signature", "")
+    event     = request.headers.get("X-FiroGate-Event", "") or str(payload.get("event") or "")
+    nonce     = request.headers.get("X-FiroGate-Nonce", "") or str(payload.get("nonce") or "")
+    try:
+        ts = int(request.headers.get("X-FiroGate-Timestamp") or payload.get("timestamp") or 0)
+    except (TypeError, ValueError):
+        return "", 400
 
-    db  = get_db()
-    pmt = db.execute(
-        "SELECT * FROM firo_payments WHERE order_id=?", (order_id,)
-    ).fetchone()
-    if not pmt:
-        return "", 404
-    if pmt["status"] == "confirmed":
-        return "", 200  # idempotent — never downgrade a confirmed payment
-
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    if event == "payment.confirmed":
-        txid = str(payload.get("txid") or "")
-        db.execute(
-            "UPDATE firo_payments SET status='confirmed', confirmed_at=?, txid=? "
-            "WHERE order_id=? AND status!='confirmed'",
-            (now, txid, order_id)
-        )
-        db.execute("UPDATE tokens SET verified=1 WHERE id=?", (pmt["token_id"],))
-        db.commit()
-        log_action("firo_payment_confirmed",
-                   f"order={order_id} tok={pmt['token_id'][:8]} badge granted")
+    if not FIROGATE_WEBHOOK_SECRET:
+        app.logger.error("webhook: FIROGATE_WEBHOOK_SECRET is not set, ignoring")
+        return "", 503
+    if not _webhook_sig_ok(raw, payload, signature):
+        app.logger.warning("webhook: bad signature")
+        return "", 403
+    if abs(time.time() - ts) > 300:
+        return "", 403
+    if "timestamp" in payload and str(payload.get("timestamp")) != str(ts):
+        return "", 403
+    if not nonce or not _remember_nonce(nonce):
         return "", 200
 
-    # payment.expired / payment.cancelled — only touches still-pending rows,
-    # so a race with a confirmation that lands moments later can't clobber it
-    # (the status!='confirmed' guard above already returned early for those).
-    new_status = "expired" if event == "payment.expired" else "cancelled"
+    if event not in _WEBHOOK_EVENTS:
+        return "", 200
+    order_id = str(payload.get("order_id") or "")
+    if not order_id:
+        return "", 200
+
+    db  = get_db()
+    pmt = db.execute("SELECT * FROM firo_payments WHERE order_id=?", (order_id,)).fetchone()
+    if not pmt:
+        return "", 200
+
+    if event == "payment.refunded":
+        db.execute("UPDATE firo_payments SET status='refunded', refunded_at=? WHERE id=?", (_now(), pmt["id"]))
+        if (pmt["kind"] or "verify") == "product":
+            gone = db.execute("DELETE FROM purchases WHERE payment_id=?", (pmt["id"],))
+            if gone.rowcount:
+                db.execute("UPDATE products SET sales = MAX(sales - 1, 0) WHERE id=?", (pmt["product_id"],))
+            db.execute("DELETE FROM product_ratings WHERE product_id=? AND token_id=?",
+                       (pmt["product_id"], pmt["token_id"]))
+        else:
+            still_paid = db.execute(
+                "SELECT 1 FROM firo_payments WHERE token_id=? AND status='confirmed' AND kind='verify' AND id!=?",
+                (pmt["token_id"], pmt["id"])
+            ).fetchone()
+            if not still_paid:
+                db.execute("UPDATE tokens SET verified=0 WHERE id=?", (pmt["token_id"],))
+        db.commit()
+        log_action("firo_payment_refunded", f"order={order_id}")
+        return "", 200
+
+    data = dict(payload)
+    data["status"] = {"payment.confirmed": "confirmed", "payment.expired": "expired",
+                      "payment.cancelled": "cancelled"}[event]
+    _apply_gateway_state(db, pmt, data, "webhook")
+    return "", 200
+
+
+# ── Shop (digital products, paid with FiroGate) ────────────────────────────
+
+PRODUCT_DIR       = os.path.join(BASE_DIR, "instance", "products")
+PRODUCT_FILE_MAX  = 20 * 1024 * 1024
+PRODUCT_FILE_EXTS = {"zip", "7z", "gz", "tar", "pdf", "epub", "txt", "md", "csv", "json",
+                     "png", "jpg", "jpeg", "webp", "gif", "mp3", "ogg", "flac", "wav", "mp4", "webm"}
+_rl_rate = defaultdict(list)
+_rl_dl   = defaultdict(list)
+os.makedirs(PRODUCT_DIR, exist_ok=True)
+
+
+def _shop_on() -> bool:
+    return get_setting("shop_enabled", "1") == "1"
+
+
+def _shop_visible() -> bool:
+    """Who may browse the shop. Buying always needs an account."""
+    if not _shop_on():
+        return _is_admin()
+    if get_setting("shop_visibility", "everyone") == "members":
+        return _is_admin() or _current_tok() is not None
+    return True
+
+
+def _product(db, pid: str, *, only_active: bool = True):
+    if not re.fullmatch(r"[0-9a-f]{32}", pid or ""):
+        return None
+    row = db.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
+    if not row or (only_active and not row["active"] and not _is_admin()):
+        return None
+    return row
+
+
+def _rating_map(db, ids: list) -> dict:
+    if not ids:
+        return {}
+    qs = ",".join("?" * len(ids))
+    rows = db.execute(
+        f"SELECT product_id, AVG(stars) AS avg, COUNT(*) AS n FROM product_ratings "
+        f"WHERE product_id IN ({qs}) GROUP BY product_id", ids
+    ).fetchall()
+    return {r["product_id"]: {"avg": round(r["avg"] or 0, 1), "n": r["n"]} for r in rows}
+
+
+def _owns(db, tok, pid: str) -> bool:
+    if not tok:
+        return False
+    return db.execute("SELECT 1 FROM purchases WHERE product_id=? AND token_id=?",
+                      (pid, tok["id"])).fetchone() is not None
+
+
+def _clean_label(name: str) -> str:
+    base = os.path.basename(name or "").strip()
+    base = re.sub(r"[^A-Za-z0-9._ -]+", "", base)[:80].strip(" .")
+    return base or "download"
+
+
+def _save_product_file(f) -> tuple[str, str, int] | None:
+    """Store an uploaded product file outside static/. Returns (stored, label, size)."""
+    if not f or not f.filename:
+        return None
+    ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else ""
+    if ext not in PRODUCT_FILE_EXTS:
+        raise ValueError("That file type is not allowed.")
+    data = f.read(PRODUCT_FILE_MAX + 1)
+    if len(data) > PRODUCT_FILE_MAX:
+        raise ValueError("File is bigger than 20 MB.")
+    if not data:
+        raise ValueError("File is empty.")
+    stored = f"{uuid.uuid4().hex}.bin"
+    path = os.path.join(PRODUCT_DIR, stored)
+    with open(path, "wb") as fh:
+        fh.write(data)
+    os.chmod(path, 0o600)
+    return stored, _clean_label(f.filename), len(data)
+
+
+def _delete_product_file(stored: str):
+    if stored and re.fullmatch(r"[0-9a-f]{32}\.bin", stored):
+        try:
+            os.remove(os.path.join(PRODUCT_DIR, stored))
+        except OSError:
+            pass
+
+
+@app.route("/shop")
+def shop():
+    if not _shop_visible():
+        if not _shop_on():
+            abort(404)
+        return redirect(url_for("token_login"))
+    db   = get_db()
+    q    = request.args.get("q", "").strip()[:80]
+    sort = request.args.get("sort", "new")
+    order = {"new": "created DESC", "top": "sales DESC, created DESC",
+             "low": "price_firo ASC", "high": "price_firo DESC"}.get(sort, "created DESC")
+    if q:
+        like = f"%{q}%"
+        rows = db.execute(f"SELECT * FROM products WHERE active=1 AND (title LIKE ? OR summary LIKE ?) "
+                          f"ORDER BY {order} LIMIT 120", (like, like)).fetchall()
+    else:
+        rows = db.execute(f"SELECT * FROM products WHERE active=1 ORDER BY {order} LIMIT 120").fetchall()
+    tok   = _current_tok()
+    owned = set()
+    if tok:
+        owned = {r["product_id"] for r in db.execute(
+            "SELECT product_id FROM purchases WHERE token_id=?", (tok["id"],)).fetchall()}
+    return render_template("shop.html", products=rows, q=q, sort=sort, owned=owned,
+                           ratings=_rating_map(db, [r["id"] for r in rows]))
+
+
+@app.route("/shop/<pid>")
+def product_page(pid):
+    if not _shop_visible():
+        if not _shop_on():
+            abort(404)
+        return redirect(url_for("token_login"))
+    db   = get_db()
+    prod = _product(db, pid)
+    if not prod:
+        abort(404)
+    tok    = _current_tok()
+    owned  = _owns(db, tok, pid)
+    state  = ""
+    if tok and not owned:
+        if request.args.get("check") or request.args.get("paid"):
+            state = _check_pending(tok, "product", pid)
+            owned = _owns(db, tok, pid)
+        else:
+            open_pmt = db.execute(
+                "SELECT status FROM firo_payments WHERE token_id=? AND kind='product' AND product_id=? "
+                "AND status IN ('pending','underpaid') ORDER BY created DESC LIMIT 1", (tok["id"], pid)
+            ).fetchone()
+            state = open_pmt["status"] if open_pmt else ""
+    mine = None
+    if tok and owned:
+        mine = db.execute("SELECT stars, note FROM product_ratings WHERE product_id=? AND token_id=?",
+                          (pid, tok["id"])).fetchone()
+    reviews = db.execute(
+        "SELECT r.stars, r.note, r.updated, r.created, "
+        "COALESCE(NULLIF(t.claimed_name,''), t.label, 'Member') AS who, t.verified AS who_verified "
+        "FROM product_ratings r LEFT JOIN tokens t ON t.id = r.token_id "
+        "WHERE r.product_id=? ORDER BY COALESCE(NULLIF(r.updated,''), r.created) DESC LIMIT 30", (pid,)
+    ).fetchall()
+    dist = {k: 0 for k in range(1, 6)}
+    for r in db.execute("SELECT stars, COUNT(*) AS n FROM product_ratings WHERE product_id=? GROUP BY stars",
+                        (pid,)).fetchall():
+        dist[r["stars"]] = r["n"]
+    rating = _rating_map(db, [pid]).get(pid, {"avg": 0, "n": 0})
+    return render_template("product.html", p=prod, owned=owned, state=state, mine=mine,
+                           reviews=reviews, rating=rating, dist=dist,
+                           pay_enabled=bool(FIROGATE_API_KEY),
+                           just_cancelled=bool(request.args.get("cancelled")))
+
+
+@app.route("/shop/<pid>/buy", methods=["POST"])
+@require_poster
+def product_buy(pid):
+    if not _csrf_ok(): abort(403)
+    if _is_admin():
+        return redirect(url_for("product_page", pid=pid))
+    tok = _current_tok()
+    if not tok:
+        return redirect(url_for("token_login"))
+    db   = get_db()
+    prod = _product(db, pid)
+    if not prod or not prod["active"] or not _shop_on():
+        abort(404)
+    if _owns(db, tok, pid):
+        return redirect(url_for("product_page", pid=pid))
+    if _chk(_rl_pay, tok["id"], 8, 600):
+        return render_template("error.html", code=429, msg="Too many tries. Please wait a few minutes."), 429
+    if not FIROGATE_API_KEY:
+        return render_template("error.html", code=503, msg=_PAY_DOWN_MSG), 503
+
+    existing = _pending_payment(db, tok["id"], "product", pid)
+    if existing and existing["checkout_url"]:
+        return redirect(existing["checkout_url"])
+
+    base = _get_site_base()
+    if not base:
+        return render_template("error.html", code=503, msg=_PAY_DOWN_MSG), 503
+    order_id = f"SHOP-{pid[:8]}-{tok['id'][:8]}-{uuid.uuid4().hex[:8]}"
+    try:
+        result = _firogate_request("/api/payments/create", {
+            "amount_firo":       float(prod["price_firo"]),
+            "order_id":          order_id,
+            "order_description": prod["title"][:120],
+            "success_url":       f"{base}/shop/{pid}?paid=1",
+            "cancel_url":        f"{base}/shop/{pid}/cancel",
+            "timeout_minutes":   FIROGATE_TIMEOUT_MIN,
+        })
+    except GatewayError as exc:
+        app.logger.error("product_buy: %s", exc)
+        return render_template("error.html", code=503, msg=_PAY_DOWN_MSG), 503
+
+    checkout_url = str(result.get("checkout_url") or "")
+    fg_id        = str(result.get("payment_id") or "")
+    if not checkout_url.startswith(("https://", "http://")) or not fg_id:
+        app.logger.error("product_buy: FiroGate answer had no checkout_url or payment_id")
+        return render_template("error.html", code=503, msg=_PAY_DOWN_MSG), 503
+
     db.execute(
-        "UPDATE firo_payments SET status=? WHERE order_id=? AND status='pending'",
-        (new_status, order_id)
+        "INSERT INTO firo_payments (id, token_id, order_id, fg_payment_id, amount_firo, status, "
+        "checkout_url, expires_at, created, kind, product_id) "
+        "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, 'product', ?)",
+        (uuid.uuid4().hex, tok["id"], order_id, fg_id[:64], float(prod["price_firo"]),
+         checkout_url, str(result.get("expires_at") or "")[:40], _now(), pid)
     )
     db.commit()
-    log_action(f"firo_payment_{new_status}", f"order={order_id} tok={pmt['token_id'][:8]}")
-    return "", 200
+    log_action("shop_order_started", f"order={order_id}")
+    return redirect(checkout_url)
+
+
+@app.route("/shop/<pid>/status")
+@require_poster
+def product_status(pid):
+    tok = _current_tok()
+    if not tok or not _product(get_db(), pid):
+        return {"owned": False}
+    if _owns(get_db(), tok, pid):
+        return {"owned": True}
+    state = _check_pending(tok, "product", pid)
+    return {"owned": _owns(get_db(), tok, pid), "state": state}
+
+
+@app.route("/shop/<pid>/cancel")
+@require_poster
+def product_cancel(pid):
+    tok   = _current_tok()
+    fg_id = request.args.get("payment_id", "")[:64]
+    if tok and fg_id:
+        db = get_db()
+        db.execute("UPDATE firo_payments SET status='cancelled' WHERE token_id=? AND fg_payment_id=? "
+                   "AND kind='product' AND product_id=? AND status='pending'", (tok["id"], fg_id, pid))
+        db.commit()
+    return redirect(url_for("product_page", pid=pid, cancelled=1))
+
+
+@app.route("/shop/<pid>/rate", methods=["POST"])
+@require_poster
+def product_rate(pid):
+    if not _csrf_ok(): abort(403)
+    tok = _current_tok()
+    db  = get_db()
+    if not tok or not _product(db, pid) or not _owns(db, tok, pid):
+        abort(403)
+    if _chk(_rl_rate, tok["id"], 10, 600):
+        abort(429)
+    try:
+        stars = int(request.form.get("stars", "0"))
+    except ValueError:
+        stars = 0
+    if stars < 1 or stars > 5:
+        return redirect(url_for("product_page", pid=pid, rate_err=1) + "#rate")
+    note = re.sub(r"\s+", " ", request.form.get("note", "")).strip()[:280]
+    db.execute(
+        "INSERT INTO product_ratings (product_id, token_id, stars, note, created, updated) VALUES (?,?,?,?,?,?) "
+        "ON CONFLICT(product_id, token_id) DO UPDATE SET stars=excluded.stars, note=excluded.note, updated=excluded.updated",
+        (pid, tok["id"], stars, note, _now(), _now())
+    )
+    db.commit()
+    return redirect(url_for("product_page", pid=pid, rated=1) + "#rate")
+
+
+@app.route("/shop/<pid>/download")
+@require_poster
+def product_download(pid):
+    tok = _current_tok()
+    db  = get_db()
+    prod = _product(db, pid, only_active=False)
+    if not prod or not prod["file_name"]:
+        abort(404)
+    if not _is_admin() and not (tok and _owns(db, tok, pid)):
+        abort(403)
+    who = tok["id"] if tok else "admin"
+    if _chk(_rl_dl, who, 30, 600):
+        abort(429)
+    path = os.path.join(PRODUCT_DIR, prod["file_name"])
+    if not re.fullmatch(r"[0-9a-f]{32}\.bin", prod["file_name"]) or not os.path.isfile(path):
+        abort(404)
+    from flask import send_file
+    resp = send_file(path, mimetype="application/octet-stream", as_attachment=True,
+                     download_name=prod["file_label"] or "download", max_age=0)
+    resp.headers["Cache-Control"] = "private, no-store"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+# ── Shop admin ─────────────────────────────────────────────────────────────
+
+def _product_form(db, existing=None):
+    """Read and check the product form. Returns (values, error)."""
+    f = request.form
+    title   = f.get("title", "").strip()[:140]
+    summary = f.get("summary", "").strip()[:240]
+    body    = f.get("body", "").strip()[:20000]
+    secret  = f.get("secret_text", "").strip()[:4000]
+    try:
+        price = round(float(f.get("price_firo", "0")), 8)
+    except ValueError:
+        price = 0
+    if not title:
+        return None, "Add a title."
+    if price <= 0 or price > 100000:
+        return None, "Price must be more than 0 FIRO."
+    vals = {"title": title, "summary": summary, "body": body, "secret_text": secret,
+            "price_firo": price, "active": 1 if f.get("active") else 0}
+    imgs = save_images([request.files.get("image")]) if request.files.get("image") else []
+    if imgs:
+        vals["image"] = imgs[0]
+    elif existing is not None and f.get("remove_image"):
+        vals["image"] = ""
+    try:
+        saved = _save_product_file(request.files.get("file"))
+    except ValueError as exc:
+        return None, str(exc)
+    if saved:
+        vals["file_name"], vals["file_label"], vals["file_size"] = saved
+    elif existing is not None and f.get("remove_file"):
+        vals.update(file_name="", file_label="", file_size=0)
+    has_file = vals.get("file_name", existing["file_name"] if existing else "")
+    if not has_file and not secret:
+        if saved:
+            _delete_product_file(saved[0])
+        return None, "Add a file or the text buyers get."
+    return vals, None
+
+
+@app.route(f"/{ADMIN_PREFIX}/products/new", methods=["GET", "POST"])
+@require_admin
+def admin_product_new():
+    error = None
+    if request.method == "POST":
+        if not _csrf_ok(): abort(403)
+        db = get_db()
+        vals, error = _product_form(db)
+        if vals:
+            pid = uuid.uuid4().hex
+            db.execute(
+                "INSERT INTO products (id, title, summary, body, price_firo, image, file_name, file_label, "
+                "file_size, secret_text, active, created, updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (pid, vals["title"], vals["summary"], vals["body"], vals["price_firo"], vals.get("image", ""),
+                 vals.get("file_name", ""), vals.get("file_label", ""), vals.get("file_size", 0),
+                 vals["secret_text"], vals["active"], _now(), _now()))
+            db.commit()
+            log_action("product_created", vals["title"][:80])
+            return redirect(url_for("admin_dashboard", tab="products"))
+    return render_template("admin_product.html", p=None, error=error)
+
+
+@app.route(f"/{ADMIN_PREFIX}/products/<pid>", methods=["GET", "POST"])
+@require_admin
+def admin_product_edit(pid):
+    db   = get_db()
+    prod = _product(db, pid, only_active=False)
+    if not prod:
+        abort(404)
+    error = None
+    if request.method == "POST":
+        if not _csrf_ok(): abort(403)
+        vals, error = _product_form(db, prod)
+        if vals:
+            if "file_name" in vals and vals["file_name"] != prod["file_name"]:
+                _delete_product_file(prod["file_name"])
+            vals["updated"] = _now()
+            cols = ", ".join(f"{k}=?" for k in vals)
+            db.execute(f"UPDATE products SET {cols} WHERE id=?", (*vals.values(), pid))
+            db.commit()
+            log_action("product_updated", vals["title"][:80])
+            return redirect(url_for("admin_dashboard", tab="products"))
+    return render_template("admin_product.html", p=prod, error=error)
+
+
+@app.route(f"/{ADMIN_PREFIX}/products/<pid>/delete", methods=["POST"])
+@require_admin
+def admin_product_delete(pid):
+    if not _csrf_ok(): abort(403)
+    db   = get_db()
+    prod = _product(db, pid, only_active=False)
+    if not prod:
+        abort(404)
+    if db.execute("SELECT 1 FROM purchases WHERE product_id=?", (pid,)).fetchone():
+        db.execute("UPDATE products SET active=0, updated=? WHERE id=?", (_now(), pid))
+        log_action("product_hidden", prod["title"][:80])
+    else:
+        db.execute("DELETE FROM products WHERE id=?", (pid,))
+        db.execute("DELETE FROM product_ratings WHERE product_id=?", (pid,))
+        _delete_product_file(prod["file_name"])
+        log_action("product_deleted", prod["title"][:80])
+    db.commit()
+    return redirect(url_for("admin_dashboard", tab="products"))
 
 
 # ── Contributor ────────────────────────────────────────────────────────────
@@ -2398,8 +2794,20 @@ def contributor_dashboard():
     if not tok: return redirect(url_for("token_login"))
     db    = get_db()
     posts = db.execute("SELECT * FROM posts WHERE token_id=? ORDER BY created DESC",(tok["id"],)).fetchall()
+    payments = db.execute(
+        "SELECT f.order_id, f.amount_firo, f.amount_received, f.status, f.txid, f.created, f.confirmed_at, "
+        "f.kind, f.product_id, COALESCE(p.title, '') AS product_title "
+        "FROM firo_payments f LEFT JOIN products p ON p.id = f.product_id "
+        "WHERE f.token_id=? ORDER BY f.created DESC LIMIT 10", (tok["id"],)
+    ).fetchall()
+    purchases = db.execute(
+        "SELECT p.id, p.title, p.image, u.created FROM purchases u JOIN products p ON p.id = u.product_id "
+        "WHERE u.token_id=? ORDER BY u.created DESC", (tok["id"],)
+    ).fetchall()
     return render_template("contributor_dashboard.html",
-                           tok_row=tok, posts=[_enrich(p) for p in posts],
+                           tok_row=tok, posts=[_enrich(p) for p in posts], payments=payments,
+                           purchases=purchases,
+                           pay_enabled=bool(FIROGATE_API_KEY),
                            verify_amount=FIROGATE_VERIFY_AMOUNT)
 
 @app.route("/contribute/profile", methods=["GET","POST"])
@@ -2638,7 +3046,34 @@ def admin_dashboard():
     site_tagline = get_setting("site_tagline","")
     maintenance  = get_setting("maintenance","0")
     ppp          = get_setting("posts_per_page","10")
-    return render_template("admin_dashboard.html",
+    tab = request.args.get("tab", "posts")
+    if tab not in ("posts", "people", "payments", "products", "settings"):
+        tab = "posts"
+    payments = get_db().execute(
+        "SELECT p.order_id, p.amount_firo, p.amount_received, p.status, p.txid, p.created, p.confirmed_at, "
+        "p.kind, COALESCE(pr.title, '') AS product_title, "
+        "COALESCE(NULLIF(t.claimed_name,''), t.label, '') AS who "
+        "FROM firo_payments p LEFT JOIN tokens t ON t.id = p.token_id "
+        "LEFT JOIN products pr ON pr.id = p.product_id "
+        "ORDER BY p.created DESC LIMIT 100"
+    ).fetchall()
+    pay_sum = get_db().execute(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(COALESCE(NULLIF(amount_received,0), amount_firo)),0) AS firo "
+        "FROM firo_payments WHERE status='confirmed'"
+    ).fetchone()
+    products = get_db().execute(
+        "SELECT p.*, (SELECT AVG(stars) FROM product_ratings r WHERE r.product_id=p.id) AS avg_stars, "
+        "(SELECT COUNT(*) FROM product_ratings r WHERE r.product_id=p.id) AS n_ratings, "
+        "(SELECT COALESCE(SUM(amount_firo),0) FROM purchases u WHERE u.product_id=p.id) AS earned "
+        "FROM products p ORDER BY p.active DESC, p.created DESC"
+    ).fetchall()
+    return render_template("admin_dashboard.html", tab=tab, products=products,
+        shop_enabled=get_setting("shop_enabled", "1"), shop_visibility=get_setting("shop_visibility", "everyone"),
+        payments=payments, pay_sum=pay_sum,
+        pay_ready={"api": bool(FIROGATE_API_KEY), "hook": bool(FIROGATE_WEBHOOK_SECRET),
+                   "base": bool(os.environ.get("SITE_BASE_URL", "")),
+                   "hook_url": (os.environ.get("SITE_BASE_URL", "").rstrip("/") or "https://your-site") + "/webhook/firogate"},
+        verify_amount=FIROGATE_VERIFY_AMOUNT,
         posts=posts, tokens=tokens, authors=authors,
         new_token=new_tok, new_token_label=new_label,
         bulk_created=bulk_created, bulk_batch=bulk_batch,
@@ -2777,8 +3212,11 @@ def admin_settings():
     set_setting("site_tagline",  request.form.get("site_tagline","").strip()[:120])
     set_setting("posts_per_page",request.form.get("posts_per_page","10").strip())
     set_setting("maintenance",   "1" if request.form.get("maintenance") else "0")
+    set_setting("shop_enabled",  "1" if request.form.get("shop_enabled") else "0")
+    vis = request.form.get("shop_visibility", "everyone")
+    set_setting("shop_visibility", vis if vis in ("everyone", "members") else "everyone")
     log_action("settings_updated","admin updated site settings")
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("admin_dashboard", tab="settings"))
 
 # ── Author management ──────────────────────────────────────────────────────
 @app.route(f"/{ADMIN_PREFIX}/authors/create", methods=["POST"])
@@ -2786,10 +3224,10 @@ def admin_settings():
 def author_create():
     if not _csrf_ok(): abort(403)
     name = request.form.get("name","").strip()[:80]
-    if not name: return redirect(url_for("admin_dashboard"))
+    if not name: return redirect(url_for("admin_dashboard", tab="people"))
     db = get_db()
     if db.execute("SELECT id FROM authors WHERE name=?", (name,)).fetchone():
-        return redirect(url_for("admin_dashboard"))
+        return redirect(url_for("admin_dashboard", tab="people"))
     av         = save_avatar(request.files.get("avatar"))
     verified   = 1 if request.form.get("verified") else 0
     role_badge = request.form.get("role_badge","").strip()
@@ -2801,7 +3239,7 @@ def author_create():
     )
     db.commit()
     log_action("author_created", name)
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("admin_dashboard", tab="people"))
 
 @app.route(f"/{ADMIN_PREFIX}/authors/edit/<aid>", methods=["POST"])
 @require_admin
@@ -2825,7 +3263,7 @@ def author_edit(aid):
                (name, av, verified, role_badge, aid))
     db.execute("UPDATE posts SET author=? WHERE author_id=?", (name, aid))
     db.commit()
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("admin_dashboard", tab="people"))
 
 @app.route(f"/{ADMIN_PREFIX}/authors/delete/<aid>", methods=["POST"])
 @require_admin
@@ -2839,7 +3277,7 @@ def author_delete(aid):
             except Exception: pass
         db.execute("DELETE FROM authors WHERE id=?", (aid,))
         db.commit()
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("admin_dashboard", tab="people"))
 
 # ── Token management ───────────────────────────────────────────────────────
 @app.route(f"/{ADMIN_PREFIX}/tokens/create", methods=["POST"])
@@ -2870,7 +3308,7 @@ def token_create():
         session["new_token"]       = raw
         session["new_token_label"] = label
         log_action("token_created", label)
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("admin_dashboard", tab="people"))
 
 @app.route(f"/{ADMIN_PREFIX}/tokens/bulk-create", methods=["POST"])
 @require_admin
@@ -2907,7 +3345,7 @@ def token_bulk_create():
                f"{count} pool tokens — batch {batch_id} — prefix '{prefix}'")
     session["bulk_created"] = count
     session["bulk_batch"]   = batch_id
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("admin_dashboard", tab="people"))
 
 @app.route("/claim-token/<token_id>", methods=["GET", "POST"])
 def claim_pool_token(token_id):
@@ -2956,7 +3394,7 @@ def claim_pool_token(token_id):
                 db.execute(
                     "UPDATE tokens SET claimed=1, claimed_at=?, claimed_by=?, claimed_name=? WHERE id=?",
                     (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                     request.remote_addr or "unknown",
+                     "",
                      display_name,
                      token_id)
                 )
@@ -3006,7 +3444,7 @@ def token_revoke(tid):
     db.execute("UPDATE tokens SET revoked=1 WHERE id=?", (tid,))
     db.commit()
     log_action("token_revoked", tid)
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("admin_dashboard", tab="people"))
 
 @app.route(f"/{ADMIN_PREFIX}/tokens/verify/<tid>", methods=["POST"])
 @require_admin
@@ -3020,7 +3458,7 @@ def token_verify(tid):
         db.execute("UPDATE tokens SET verified=? WHERE id=?", (new_status, tid))
         db.commit()
         log_action("token_verified" if new_status else "token_unverified", tid)
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("admin_dashboard", tab="people"))
 
 @app.route(f"/{ADMIN_PREFIX}/tokens/delete/<tid>", methods=["POST"])
 @require_admin
@@ -3029,7 +3467,7 @@ def token_delete(tid):
     db = get_db()
     db.execute("DELETE FROM tokens WHERE id=?", (tid,))
     db.commit()
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("admin_dashboard", tab="people"))
 
 # ── Error handlers ─────────────────────────────────────────────────────────
 @app.errorhandler(403)
@@ -3049,9 +3487,9 @@ def e503(e): return render_template("error.html", code=503, msg=str(e.descriptio
 def _ctx():
     s = get_setting("site_title","GateForum")
     return {
-        "admin_login_url":  f"/{ADMIN_PREFIX}/{ADMIN_SUFFIX}",
         "current_is_admin": _is_admin(),
         "current_tok_row":  _current_tok(),
+        "shop_link":        _shop_visible(),
         "site_title":       s,
         "site_tagline":     get_setting("site_tagline",""),
     }

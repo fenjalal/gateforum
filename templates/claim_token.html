@@ -1,31 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Claim Token — GateForum{% endblock %}
+{% block title %}Claim key · {{ site_title or 'GateForum' }}{% endblock %}
 {% block content %}
-<div class="page-grid"><div></div>
-<div class="form-wrap">
-  <div class="form-title">Claim Your Token</div>
-  
-  <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:.8rem 1rem;margin-bottom:1rem">
-    <div style="font-family:var(--mono);font-size:.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.3rem">this is not key complete to get your token</div>
-    <div style="font-family:var(--mono);font-size:.85rem;color:var(--accent)">{{ token.label }}</div>
-  </div>
-  
-  {% if error %}<div class="alert-err">{{ error }}</div>{% endif %}
-  
-  <form method="POST" autocomplete="off">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-    <div class="fg">
-      <label>Choose Your Display Name</label>
-      <input type="text" name="display_name" required autofocus autocomplete="off" placeholder="Enter your public name" maxlength="50" minlength="2" pattern="[^<>&quot;']{2,50}">
-      <div style="font-family:var(--mono);font-size:.55rem;color:var(--text-dim);margin-top:.3rem">
-        This name will appear on your posts. 2-50 characters, no special symbols.
+<div class="auth">
+  <div class="panel">
+    <h1>Claim this key</h1>
+    <p class="lead">Key <strong>{{ token.label }}</strong>. Pick the name people will see.</p>
+    {% if error %}<div class="notice notice-err" role="alert">{{ error }}</div>{% endif %}
+    <form method="POST" autocomplete="off">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="dn">Display name</label>
+        <input id="dn" type="text" name="display_name" required autofocus autocomplete="off" placeholder="2 to 50 letters" maxlength="50" minlength="2" pattern="[^<>&quot;']{2,50}">
       </div>
-    </div>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem">
-      <button type="submit" class="btn btn-primary">Claim Token</button>
-      <a href="{{ url_for('token_login') }}" class="btn btn-secondary">Cancel</a>
-    </div>
-  </form>
+      <div class="btn-row">
+        <button type="submit" class="btn btn-primary">Claim key</button>
+        <a href="{{ url_for('token_login') }}" class="btn btn-quiet">Cancel</a>
+      </div>
+    </form>
+  </div>
 </div>
-<div></div></div>
 {% endblock %}

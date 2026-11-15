@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}{{ p.title }} · {{ site_title or 'GateForum' }}{% endblock %}
+{% block content %}
+{% import "_icons.html" as i %}
+<a href="{{ url_for('shop') }}" class="back">{{ i.back() }}Shop</a>
+{% if not p.active %}<div class="notice notice-info">Hidden from the shop. Only admins can see this page.</div>{% endif %}
+
+<div class="pd">
+  <div class="pd-head">
+    <div class="pd-img">
+      {% if p.image %}<img src="{{ url_for('static', filename='uploads/' ~ p.image) }}" alt="">
+      {% else %}<span class="item-ph">{{ p.title[0]|upper }}</span>{% endif %}
+    </div>
+    <h1 class="pd-title">{{ p.title }}</h1>
+    <div class="pd-meta">
+      {% if rating.n %}{{ i.stars(rating.avg) }}<b>{{ rating.avg }}</b><a href="#reviews">{{ rating.n }} rating{% if rating.n != 1 %}s{% endif %}</a>
+      {% else %}<span>No ratings yet</span>{% endif %}
+      {% if p.sales %}<span>{{ p.sales }} sold</span>{% endif %}
+    </div>
+    {% if p.summary %}<p class="pd-sum">{{ p.summary }}</p>{% endif %}
+  </div>
+  {% if p.body %}<div class="prose pd-body">{{ p.body | md }}</div>{% endif %}
+
+  <aside class="pd-buy" aria-label="Buy">
+    <div class="panel">
+      <div class="price" style="margin-top:0"><b>{{ "%g"|format(p.price_firo) }}</b><span>FIRO</span></div>
+      <ul class="pd-facts">
+        {% if p.file_name %}<li>{{ i.download() }}File{% if p.file_size %}, {{ p.file_size|filesize }}{% endif %}</li>{% endif %}
+        {% if p.secret_text %}<li>{{ i.lock() }}Private details after you pay</li>{% endif %}
+        <li>{{ i.check() }}Instant after payment</li>
+      </ul>
+
+      {% if owned %}
+        <div class="notice notice-ok" role="status">You own this.</div>
+        {% if p.file_name %}<a href="{{ url_for('product_download', pid=p.id) }}" class="btn btn-primary btn-block">{{ i.download() }}Download</a>{% endif %}
+        {% if p.secret_text %}
+        <div class="field" style="margin:14px 0 0">
+          <span class="label">Your details</span>
+          <div class="keybox pd-secret">{{ p.secret_text }}</div>
+        </div>
+        {% endif %}
+      {% elif current_is_admin %}
+        <p class="hint">You're signed in as admin.</p>
+        {% if p.file_name %}<a href="{{ url_for('product_download', pid=p.id) }}" class="btn btn-ghost btn-block" style="margin-top:8px">Test download</a>{% endif %}
+        <a href="{{ url_for('admin_product_edit', pid=p.id) }}" class="btn btn-quiet btn-block" style="margin-top:6px">Edit product</a>
+      {% elif not current_tok_row %}
+        <a href="{{ url_for('self_register') }}" class="btn btn-primary btn-block">{{ i.lock() }}Create account to buy</a>
+        <a href="{{ url_for('token_login') }}" class="btn btn-ghost btn-block" style="margin-top:8px">I have a key</a>
+        <p class="hint" style="margin-top:12px">No email needed. Your key is your account.</p>
+      {% elif state == 'pending' %}
+        <div id="pwait">
+          <div class="spinner" aria-hidden="true"></div>
+          <p class="pd-wait">Waiting for your payment</p>
+          <p class="hint" id="pnote" aria-live="polite">This can take a few minutes.</p>
+          <a href="{{ url_for('product_page', pid=p.id, check=1) }}" class="btn btn-ghost btn-block" style="margin-top:10px" id="pagain">Check again</a>
+          <form method="POST" action="{{ url_for('product_buy', pid=p.id) }}" style="margin-top:8px">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-quiet btn-block">Open checkout again</button>
+          </form>
+        </div>
+      {% elif state == 'underpaid' %}
+        <div class="notice notice-err" role="alert">Less FIRO arrived than the price. Contact the site admin.</div>
+      {% elif not pay_enabled %}
+        <p class="muted">Payments are off right now.</p>
+      {% else %}
+        {% if just_cancelled %}<div class="notice notice-info" role="status">Payment cancelled. Nothing was charged.</div>{% endif %}
+        <form method="POST" action="{{ url_for('product_buy', pid=p.id) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-primary btn-block">{{ i.bag() }}Buy for {{ "%g"|format(p.price_firo) }} FIRO</button>
+        </form>
+        <p class="hint" style="margin-top:12px">Secure Firo checkout. Works on Tor.</p>
+      {% endif %}
+    </div>
+  </aside>
+</div>
+
+<section class="reviews" id="reviews">
+  <div class="section-title">Ratings</div>
+  {% if rating.n %}
+  <div class="rv-top">
+    <div class="rv-score">
+      <b>{{ rating.avg if rating.n else '–' }}</b>
+      {{ i.stars(rating.avg, 'stars-lg') }}
+      <span class="muted">{{ rating.n }} rating{% if rating.n != 1 %}s{% endif %}</span>
+    </div>
+    <div class="rv-bars">
+      {% for k in [5,4,3,2,1] %}
+      <div class="rv-bar"><span>{{ k }}</span><i><em style="width:{{ (dist[k] / rating.n * 100)|round(0) if rating.n else 0 }}%"></em></i><span>{{ dist[k] }}</span></div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}<p class="muted" style="padding:16px 0">No ratings yet.</p>{% endif %}
+
+  {% if owned %}
+  <form method="POST" action="{{ url_for('product_rate', pid=p.id) }}" class="rate" id="rate">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <span class="label">{% if mine %}Your rating{% else %}Rate it{% endif %}</span>
+    {% if request.args.get('rated') %}<div class="notice notice-ok" role="status">Thanks, saved.</div>{% endif %}
+    {% if request.args.get('rate_err') %}<div class="notice notice-err" role="alert">Pick 1 to 5 stars.</div>{% endif %}
+    <fieldset class="star-pick">
+      <legend class="sr-only">Stars</legend>
+      {% for k in [5,4,3,2,1] %}
+      <input type="radio" id="s{{ k }}" name="stars" value="{{ k }}" {% if mine and mine.stars == k %}checked{% endif %}>
+      <label for="s{{ k }}" title="{{ k }} star{% if k > 1 %}s{% endif %}">★</label>
+      {% endfor %}
+    </fieldset>
+    <label class="sr-only" for="note">Short note</label>
+    <textarea id="note" name="note" maxlength="280" rows="2" class="input" placeholder="A short note (optional)">{{ mine.note if mine else '' }}</textarea>
+    <button type="submit" class="btn btn-primary btn-sm">Save rating</button>
+  </form>
+  {% elif current_tok_row %}
+  <p class="hint" style="margin:14px 0">Only buyers can rate.</p>
+  {% endif %}
+
+  <div class="rv-list">
+    {% for r in reviews %}
+    <div class="rv">
+      <div class="rv-head">{{ i.stars(r.stars) }}<span class="name">{{ r.who }}</span>{% if r.who_verified %}{{ i.verified() }}{% endif %}<time>{{ (r.updated or r.created)[:10] }}</time></div>
+      {% if r.note %}<p>{{ r.note }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if current_tok_row and not owned and state == 'pending' %}
+<script>
+(function(){
+  var url = {{ url_for('product_status', pid=p.id) | tojson }}, tries = 0;
+  var note = document.getElementById('pnote');
+  document.getElementById('pagain').hidden = true;
+  function poll(){
+    tries++;
+    fetch(url, {credentials:'same-origin', headers:{'Accept':'application/json'}})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.owned){ location.replace({{ url_for('product_page', pid=p.id) | tojson }}); return; }
+        if (d.state === 'underpaid'){ note.textContent = 'Less FIRO arrived than the price. Contact the site admin.'; return; }
+        if (tries < 90) setTimeout(poll, 5000); else note.textContent = 'Still waiting. Come back later.';
+      })
+      .catch(function(){ if (tries < 90) setTimeout(poll, 5000); });
+  }
+  setTimeout(poll, 1500);
+})();
+</script>
+{% endif %}
+{% endblock %}

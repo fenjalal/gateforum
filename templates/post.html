@@ -1,161 +1,61 @@
 {% extends "base.html" %}
-{% block title %}{{ post.title }} — GateForum{% endblock %}
+{% block title %}{{ post.title }} · {{ site_title or 'GateForum' }}{% endblock %}
 {% block content %}
-<div class="page-grid">
-  {% include '_sidebar_left.html' %}
+{% import "_icons.html" as i %}
+<div class="layout">
+  <article class="article">
+    <a href="{{ url_for('index') }}" class="back">{{ i.back() }}All posts</a>
+    {% if post.role %}<div><span class="role">{{ post.role }}</span></div>{% endif %}
+    <h1 class="article-title">{{ post.title }}</h1>
+    <div class="article-meta">
+      {% include '_byline.html' %}
+      <time datetime="{{ post.created[:10] }}">{{ post.created[:16] }} UTC</time>
+      <span>{{ rt }} min read</span>
+      <span>{{ post.views }} views</span>
+      {% if post.edited %}<span>Edited</span>{% endif %}
+    </div>
 
-  <article class="post-detail">
-    <a href="{{ url_for('index') }}" class="back-link">&larr; Back</a>
-
-    {# ── Images: all shown on detail page ── #}
     {% if imgs %}
-    <div class="post-imgs post-imgs--detail {% if imgs|length > 1 %}post-imgs--grid{% endif %}">
+    <div class="gallery{% if imgs|length > 1 %} g2{% endif %}">
       {% for img in imgs %}
-      <img src="{{ url_for('static', filename='uploads/' ~ img) }}"
-           alt="" loading="{% if loop.index == 1 %}eager{% else %}lazy{% endif %}"
-           decoding="async" class="post-img">
+      <a href="{{ url_for('static', filename='uploads/' ~ img) }}"><img src="{{ url_for('static', filename='uploads/' ~ img) }}" alt="" loading="{{ 'eager' if loop.first else 'lazy' }}" decoding="async"></a>
       {% endfor %}
     </div>
     {% endif %}
 
-    {# ── Meta — views auto-counted on load, not clickable ── #}
-    <div class="post-meta">
-      {{ post.created[:16] }} UTC
-      &bull; {{ rt }} min read
-      &bull;
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-           style="vertical-align:middle;opacity:.55">
-        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-        <circle cx="12" cy="12" r="3"/>
-      </svg>
-      {{ post.views }}
-    </div>
+    <div class="prose">{{ post.body | md }}</div>
 
-    <h1 class="detail-title">{{ post.title }}</h1>
-    {% include '_byline.html' %}
-    <hr class="post-hr">
-    <div class="post-body">{{ post.body | md }}</div>
-
-    {# ─────────────────────────────────────────────────────────────
-       Reactions bar — after body, where Read more lands.
-       ONLY fire + bolt (2 reactions as requested).
-       Counts read live from DB by post_detail route.
-       Eye is NOT here — it's auto view tracking only.
-    ───────────────────────────────────────────────────────────── #}
-    <div class="reactions-bar" id="reactions">
-
-      {% set rdefs = [
-        ('fire',
-        'M4.9 15.8S1 15.4 1 10.1C1 6 4.1 3.6 4.1 3.6S5.4 5 6.4 5.5C7.4 6.1 7.8 0 7.8 0S15 3.9 15 9.8c0 6.1-4 5.9-4 5.9s1.8-2.4 1.8-5.2c0-3-3.9-6.7-3.9-6.7s-.5 4.4-2.1 5c-1.6-.9-2.5-2.5-2.5-2.5s-3.7 5.8.6 9.3z
-          M8.2 16.1c-2-.1-3.7-1.4-3.7-3.2s.7-2.6.7-2.6s.5 1 1.1 1.5s1.8.8 2.4.1c.6-.6.8-2.3.8-2.3s1.4 1.1 1.2 3c-.1 2-.9 3.5-2.5 3.5z',
-        'Fire'),
-
-        ('bolt', 'M13 2L3 14h9l-1 8 10-12h-9l1-8z', 'Bolt'),
-      ] %}
-
-      {% for key, path, label in rdefs %}
-      <form method="POST"
-            action="{{ url_for('post_react', post_id=post.id, reaction=key) }}"
-            class="react-form">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-        <button type="submit"
-                class="react-btn{% if key in my_reactions %} react-btn--on{% endif %}"
-                title="{{ label }}">
-        <svg width="10" height="10"
-            viewBox="{% if key == 'fire' %}0 0 16 16{% else %}0 0 20 20{% endif %}"
-            fill="currentColor"
-            data-icon="{{ key }}">
-          <path d="{{ path }}"/>
-        </svg>
-          <span class="react-n">{{ reactions[key] }}</span>
+    <div class="article-actions" id="reactions">
+      {% for key, label in [('fire','Fire'),('bolt','Bolt')] %}
+      <form method="POST" action="{{ url_for('post_react', post_id=post.id, reaction=key) }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button type="submit" class="react{% if key in my_reactions %} on{% endif %}" title="{{ label }}" aria-label="{{ label }}">
+          {% if key == 'fire' %}{{ i.fire() }}{% else %}{{ i.bolt() }}{% endif %}{{ reactions[key] }}
         </button>
       </form>
       {% endfor %}
 
-      <div class="react-sep"></div>
-
-      {# ── Report ── #}
       {% if request.args.get('reported') %}
-        <span class="report-sent">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-          Reported
-        </span>
+        <span class="done-note">{{ i.check() }}Thanks, we will check it.</span>
       {% else %}
-      <details class="report-details">
-        <summary class="react-btn" title="Report this post">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-            <line x1="4" y1="22" x2="4" y2="15"/>
-          </svg>
-          Report
-          {% if report_count %}
-          <span style="color:#eb5757">{{ report_count }}</span>
-          {% endif %}
-        </summary>
-        <form method="POST" action="{{ url_for('post_report', post_id=post.id) }}"
-              class="report-form">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-          <select name="reason" class="report-select">
-            <option value="">Select reason…</option>
+      <details class="report">
+        <summary class="btn btn-quiet btn-sm">{{ i.flag() }}Report</summary>
+        <form method="POST" action="{{ url_for('post_report', post_id=post.id) }}" class="report-form">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <label class="sr-only" for="reason">Reason</label>
+          <select name="reason" id="reason" class="select" required>
+            <option value="">Pick a reason</option>
             <option value="spam">Spam</option>
-            <option value="misinformation">Misinformation</option>
-            <option value="harmful">Harmful content</option>
+            <option value="misinformation">False information</option>
+            <option value="harmful">Harmful</option>
             <option value="other">Other</option>
           </select>
-          <button type="submit" class="btn btn-danger btn-sm">Submit</button>
+          <button type="submit" class="btn btn-danger btn-sm">Send report</button>
         </form>
       </details>
       {% endif %}
-
     </div>
   </article>
-
   {% include '_sidebar_right.html' %}
 </div>
-
-<style>
-.reactions-bar{
-  display:flex;align-items:center;flex-wrap:wrap;gap:.35rem;
-  margin-top:1.6rem;padding-top:1rem;border-top:1px solid var(--border);
-}
-.react-form{margin:0;padding:0}
-.react-btn svg[data-icon="fire"]{
-  transform: scale(1.25);
-}
-.react-btn{
-  display:inline-flex;align-items:center;gap:.3rem;
-  background:var(--bg3);border:1px solid var(--border);color:var(--text-dim);
-  border-radius:20px;padding:.28rem .65rem;cursor:pointer;
-  font-family:var(--mono);font-size:.68rem;font-weight:600;
-  transition:border-color .15s,color .15s,background .15s;
-  -webkit-tap-highlight-color:transparent;line-height:1;list-style:none;
-}
-.react-btn::-webkit-details-marker{display:none}
-.react-btn:hover{border-color:var(--accent);color:var(--text-head)}
-.react-btn--on{
-  background:rgba(226,194,70,.12);border-color:rgba(226,194,70,.55);color:#e2c246;
-}
-.react-n{min-width:.9rem;text-align:center}
-.react-sep{width:1px;height:18px;background:var(--border);margin:0 .1rem}
-.report-details{display:inline-flex;flex-direction:column;gap:.4rem}
-.report-details summary{list-style:none;cursor:pointer}
-.report-details summary::-webkit-details-marker{display:none}
-.report-form{display:flex;align-items:center;gap:.4rem;margin-top:.45rem;flex-wrap:wrap}
-.report-select{
-  background:var(--bg3);border:1px solid var(--border);color:var(--text);
-  font-family:var(--mono);font-size:.68rem;padding:.3rem .5rem;
-  border-radius:4px;outline:none;transition:border-color .15s;
-}
-.report-select:focus{border-color:var(--accent)}
-.report-sent{
-  display:inline-flex;align-items:center;gap:.3rem;
-  font-family:var(--mono);font-size:.65rem;color:var(--green);
-}
-
-</style>
 {% endblock %}

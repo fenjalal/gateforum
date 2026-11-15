@@ -59,18 +59,17 @@ def main():
     # Add new hash
     lines.append(f"DNet_ADMIN_HASH={admin_hash}")
 
-    # Add defaults if .env is new
-    if not os.path.exists(ENV_FILE):
+    # Give the admin panel a random, private address if none is set yet
+    if not existing.get("DNet_ADMIN_PREFIX") or not existing.get("DNet_ADMIN_SUFFIX"):
+        lines = [l for l in lines if not l.startswith(("DNet_ADMIN_PREFIX=", "DNet_ADMIN_SUFFIX="))]
         lines += [
             "",
-            "# Admin panel path segments (change these!)",
-            "DNet_ADMIN_PREFIX=ctrl9x4mQ7wZ2pL",
-            "DNet_ADMIN_SUFFIX=auth8nK3vR6hJ1sT",
-            "",
-            "# Gunicorn bind",
-            "DNet_HOST=127.0.0.1",
-            "DNet_PORT=5000",
+            "# Admin panel address (keep it private)",
+            f"DNet_ADMIN_PREFIX={secrets.token_urlsafe(12)}",
+            f"DNet_ADMIN_SUFFIX={secrets.token_urlsafe(12)}",
         ]
+    if not existing.get("DNet_HOST"):
+        lines += ["", "# Gunicorn bind", "DNet_HOST=127.0.0.1", "DNet_PORT=5000"]
 
     with open(ENV_FILE, "w") as fh:
         fh.write("\n".join(lines) + "\n")

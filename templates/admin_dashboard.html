@@ -1,315 +1,268 @@
 {% extends "base.html" %}
-{% block title %}Admin Dashboard — GateForum{% endblock %}
+{% block title %}Admin{% endblock %}
 {% block content %}
-<div class="page-grid"><div></div>
-<div class="form-wrap" style="max-width:800px">
+{% import "_icons.html" as i %}
+<div class="narrow" style="max-width:880px">
+  {% include '_admin_tabs.html' %}
 
   {% if new_token %}
-  <div class="token-reveal">
-    <strong>&#9888; Token for "{{ new_token_label }}" — copy now, shown only once:</strong><br>
-    <code style="word-break:break-all;font-size:.8rem">{{ new_token }}</code>
+  <div class="callout">
+    <div class="label" style="margin-bottom:8px">Key for “{{ new_token_label }}”. Copy it now, it won't show again.</div>
+    <div class="keybox">{{ new_token }}</div>
   </div>
   {% endif %}
-
   {% if bulk_created %}
-  <div class="token-reveal" style="border-color:var(--teal);background:rgba(22,160,133,.07)">
-    <strong style="color:var(--teal)">&#10003; {{ bulk_created }} pool tokens created</strong>
-    &nbsp;&mdash;&nbsp;
-    <span style="font-family:var(--mono);font-size:.72rem;color:var(--text-dim)">batch: {{ bulk_batch }}</span><br>
-    <span style="font-family:var(--mono);font-size:.6rem;color:var(--text-dim)">
-      Users can now claim them from <strong>/token-access</strong>.
-      Labels follow the pattern <em>Prefix-{{ bulk_batch }}-01</em> … <em>-{{ "%02d"|format(bulk_created) }}</em>.
-    </span>
-  </div>
+  <div class="notice notice-ok" role="status">{{ bulk_created }} free keys added (batch {{ bulk_batch }}). People can claim them on the Log in page.</div>
   {% endif %}
 
-  <div class="form-title">Admin Dashboard
-    <span style="float:right;display:flex;gap:.4rem">
-      <a href="{{ url_for('admin_reports') }}" class="btn btn-ghost btn-sm">Reports</a>
-      <a href="{{ url_for('new_post') }}" class="btn btn-primary btn-sm">+ Post</a>
-      <a href="{{ url_for('admin_logout') }}" class="btn btn-ghost btn-sm">Logout</a>
-    </span>
-  </div>
-
-  {# ── STATS BAR ── #}
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin-bottom:1.4rem">
-    {% for label, val, color in [
-      ('Posts', stats.posts, 'var(--accent)'),
-      ('Views', stats.views, 'var(--blue)'),
-      ('Contrib Posts', stats.contrib, 'var(--green)'),
-      ('Active Tokens', stats.active_toks, 'var(--teal)')
-    ] %}
-    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:.6rem .8rem;text-align:center">
-      <div style="font-family:var(--mono);font-size:1.2rem;font-weight:900;color:{{ color }}">{{ val }}</div>
-      <div style="font-family:var(--mono);font-size:.55rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.12em">{{ label }}</div>
+  {% if tab == 'posts' %}
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Posts</h1>
+      <div class="stats-line"><span><b>{{ stats.posts }}</b> posts</span><span><b>{{ stats.views }}</b> views</span><span><b>{{ stats.contrib }}</b> by members</span></div>
     </div>
-    {% endfor %}
+    <a href="{{ url_for('new_post') }}" class="btn btn-primary btn-sm">{{ i.pen() }}Write</a>
   </div>
-
-  {# ── SITE SETTINGS ── #}
-  <details style="margin-bottom:1.4rem">
-    <summary style="font-family:var(--mono);font-size:.62rem;font-weight:900;text-transform:uppercase;letter-spacing:.15em;color:var(--text-dim);cursor:pointer;padding:.4rem 0;border-bottom:2px solid var(--border)">
-      &#9881; Site Settings
-    </summary>
-    <form method="POST" action="{{ url_for('admin_settings') }}" style="padding:.8rem 0 0" autocomplete="off">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-bottom:.7rem">
-        <div class="fg" style="margin:0">
-          <label>Site Title</label>
-          <input type="text" name="site_title" value="{{ site_title }}" maxlength="60">
-        </div>
-        <div class="fg" style="margin:0">
-          <label>Tagline</label>
-          <input type="text" name="site_tagline" value="{{ site_tagline }}" maxlength="120">
-        </div>
-      </div>
-      <div style="display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap;margin-bottom:.7rem">
-        <div class="fg" style="margin:0;min-width:120px">
-          <label>Posts per page</label>
-          <select name="posts_per_page">
-            {% for n in [5,10,15,20,25] %}
-            <option value="{{ n }}" {% if ppp|int == n %}selected{% endif %}>{{ n }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <label class="chk-label" style="margin-top:1rem">
-          <input type="checkbox" name="maintenance" {% if maintenance=='1' %}checked{% endif %}> Maintenance Mode
-        </label>
-      </div>
-      <button type="submit" class="btn btn-primary btn-sm">Save Settings</button>
-    </form>
-  </details>
-
-  {# ── AUTHORS ── #}
-  <div class="section-lbl">Author Profiles ({{ authors|length }})</div>
-  <form method="POST" action="{{ url_for('author_create') }}" enctype="multipart/form-data" class="inline-form" autocomplete="off">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-    <input type="text" name="name" placeholder="Name *" maxlength="80" required class="if-input" style="flex:1;min-width:120px">
-    <input type="file" name="avatar" accept=".png,.jpg,.jpeg,.gif,.webp" class="if-file">
-    <select name="role_badge" class="if-input" style="min-width:110px">
-      <option value="">— No Badge —</option>
-      {% for r in all_roles %}
-      <option value="{{ r }}">{{ r }}</option>
-      {% endfor %}
+  <form method="GET" action="{{ url_for('admin_dashboard') }}" class="inline" style="margin-bottom:6px">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search posts" class="input" aria-label="Search posts">
+    <select name="f" class="select" aria-label="Filter" style="flex:0 0 auto;width:auto">
+      <option value="all" {% if filt=='all' %}selected{% endif %}>All</option>
+      <option value="pinned" {% if filt=='pinned' %}selected{% endif %}>Pinned</option>
+      <option value="contributor" {% if filt=='contributor' %}selected{% endif %}>By members</option>
     </select>
-    <label class="chk-label"><input type="checkbox" name="verified"> Verified</label>
-    <button type="submit" class="btn btn-primary btn-sm">Add</button>
+    <button type="submit" class="btn btn-ghost btn-sm">Search</button>
+    {% if q or filt!='all' %}<a href="{{ url_for('admin_dashboard') }}" class="btn btn-quiet btn-sm">Clear</a>{% endif %}
   </form>
-  {% for a in authors %}
-  <div class="dash-row">
-    <div class="author-av">
-      {% if a.avatar %}<img src="{{ url_for('static', filename='avatars/' ~ a.avatar) }}" alt="{{ a.name }}">
-      {% else %}{{ a.name[0]|upper }}{% endif %}
-    </div>
-    <div class="dash-info">
-      <div class="dash-title">
-        {{ a.name }}
-        {% if a.verified %}<svg width="12" height="12" viewBox="0 0 24 24" style="vertical-align:middle"><path fill="#e2c246" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/></svg>{% endif %}
-        {% if a.role_badge %}<span class="role-badge role-{{ a.role_badge }}">{{ a.role_badge }}</span>{% endif %}
+  <div class="rows">
+    {% for p in posts %}
+    <div class="row">
+      <div class="row-main">
+        <div class="row-title"><a href="{{ url_for('post_detail', post_id=p.id) }}">{{ p.title }}</a>{% if p.pinned %}<span class="pill pill-amber">Pinned</span>{% endif %}</div>
+        <div class="row-meta"><span>{{ p.created[:16] }}</span><span>{{ p.author }}</span>{% if p.role %}<span class="role">{{ p.role }}</span>{% endif %}<span>{{ p.views }} views</span>{% if p.token_id %}<span>member</span>{% endif %}{% if p.edited %}<span>edited</span>{% endif %}</div>
       </div>
-      <form method="POST" action="{{ url_for('author_edit', aid=a.id) }}" enctype="multipart/form-data" class="inline-form" style="margin-top:.4rem" autocomplete="off">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-        <input type="text" name="name" value="{{ a.name }}" maxlength="80" class="if-input" style="flex:1;min-width:100px">
-        <input type="file" name="avatar" accept=".png,.jpg,.jpeg,.gif,.webp" class="if-file">
-        <select name="role_badge" class="if-input" style="min-width:100px">
-          <option value="">— No Badge —</option>
-          {% for r in all_roles %}
-          <option value="{{ r }}" {% if r == a.role_badge %}selected{% endif %}>{{ r }}</option>
-          {% endfor %}
-        </select>
-        <label class="chk-label"><input type="checkbox" name="verified" {% if a.verified %}checked{% endif %}> Verified</label>
-        <button type="submit" class="btn btn-secondary btn-sm">Save</button>
-      </form>
+      <div class="row-acts">
+        <a href="{{ url_for('admin_edit_post', post_id=p.id) }}" class="btn btn-ghost btn-xs">Edit</a>
+        <form method="POST" action="{{ url_for('admin_pin', post_id=p.id) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-ghost btn-xs">{% if p.pinned %}Unpin{% else %}Pin{% endif %}</button>
+        </form>
+        <form method="POST" action="{{ url_for('admin_delete', post_id=p.id) }}" onsubmit="return confirm('Delete this post?')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-danger btn-xs">Delete</button>
+        </form>
+      </div>
     </div>
-    <form method="POST" action="{{ url_for('author_delete', aid=a.id) }}" onsubmit="return confirm('Delete author?')">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-      <button class="btn btn-danger btn-sm">Del</button>
-    </form>
+    {% else %}<p class="empty">No posts found.</p>{% endfor %}
   </div>
-  {% else %}<div class="empty">No authors yet.</div>{% endfor %}
 
-  {# ── POSTS ── #}
-  <div class="section-lbl" style="margin-top:1.6rem">
-    Posts ({{ posts|length }})
-    <span style="float:right;display:flex;gap:.4rem;font-weight:400">
-      <form method="GET" action="{{ url_for('admin_dashboard') }}" style="display:flex;gap:.35rem;align-items:center">
-        <input type="text" name="q" value="{{ q }}" placeholder="Search posts…" class="if-input" style="width:140px;font-size:.62rem;padding:.2rem .45rem">
-        <select name="f" class="if-input" style="font-size:.62rem;padding:.2rem .35rem">
-          <option value="all" {% if filt=='all' %}selected{% endif %}>All</option>
-          <option value="pinned" {% if filt=='pinned' %}selected{% endif %}>Pinned</option>
-          <option value="contributor" {% if filt=='contributor' %}selected{% endif %}>Contributor</option>
-        </select>
-        <button type="submit" class="btn btn-secondary btn-sm">Go</button>
-        {% if q or filt!='all' %}<a href="{{ url_for('admin_dashboard') }}" class="btn btn-ghost btn-sm">✕ Clear</a>{% endif %}
-      </form>
-    </span>
-  </div>
-  {% for p in posts %}
-  <div class="dash-row">
-    <div class="dash-info">
-      <div class="dash-title">{% if p.pinned %}&#9733; {% endif %}{{ p.title }}{% if p.edited %} <span style="font-family:var(--mono);font-size:.55rem;color:var(--text-dim)">[edited]</span>{% endif %}</div>
-      <div class="dash-meta">
-        {{ p.created[:16] }} &bull; {{ p.author }}
-        {% if p.role %}&bull; <span class="role-badge role-{{ p.role }}">{{ p.role }}</span>{% endif %}
-        &bull; &#128065; {{ p.views }}
-        {% if p.token_id %}&bull; <em>contributor</em>{% endif %}
-      </div>
-    </div>
-    <div class="dash-acts">
-      <a href="{{ url_for('post_detail', post_id=p.id) }}" class="btn btn-secondary btn-sm">View</a>
-      <a href="{{ url_for('admin_edit_post', post_id=p.id) }}" class="btn btn-secondary btn-sm">Edit</a>
-      <form method="POST" action="{{ url_for('admin_pin', post_id=p.id) }}">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-        <button class="btn btn-sm {% if p.pinned %}btn-accent{% else %}btn-ghost{% endif %}">
-          {% if p.pinned %}Unpin{% else %}Pin{% endif %}
-        </button>
-      </form>
-      <form method="POST" action="{{ url_for('admin_delete', post_id=p.id) }}" onsubmit="return confirm('Delete this post?')">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-        <button class="btn btn-danger btn-sm">Del</button>
-      </form>
-    </div>
-  </div>
-  {% else %}<div class="empty">No posts found.</div>{% endfor %}
+  {% elif tab == 'people' %}
+  <h1 class="page-title">People</h1>
+  <div class="stats-line" style="margin-bottom:14px"><span><b>{{ stats.active_toks }}</b> active keys</span><span><b>{{ authors|length }}</b> author profiles</span></div>
 
-  {# ── TOKENS ── #}
-  <div class="section-lbl" style="margin-top:1.6rem">Contributor Tokens</div>
-  <details open>
-    <summary style="font-family:var(--mono);font-size:.6rem;color:var(--text-dim);cursor:pointer;padding:.3rem 0;margin-bottom:.6rem">
-      Generate new token ▾
-    </summary>
-    <form method="POST" action="{{ url_for('token_create') }}" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:.75rem;margin-bottom:.8rem" autocomplete="off">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.6rem">
-        <div class="fg" style="margin:0">
-          <label>Label *</label>
-          <input type="text" name="label" placeholder="e.g. Reporter A" maxlength="80" required class="if-input" style="width:100%">
+  <details class="fold">
+    <summary>New key</summary>
+    <div class="fold-body">
+      <form method="POST" action="{{ url_for('token_create') }}" autocomplete="off">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <div class="grid-2">
+          <div class="field"><label for="tl">Label</label><input id="tl" type="text" name="label" placeholder="Reporter A" maxlength="80" required></div>
+          <div class="field"><label for="tn">Note <span class="hint">only you see it</span></label><input id="tn" type="text" name="note" maxlength="200"></div>
+          <div class="field"><label for="ta">Author profile</label>
+            <select id="ta" name="author_id"><option value="">None</option>{% for a in authors %}<option value="{{ a.id }}">{{ a.name }}{% if a.verified %} ✓{% endif %}{% if a.role_badge %} [{{ a.role_badge }}]{% endif %}</option>{% endfor %}</select></div>
+          <div class="field"><label for="tr">Default tag</label>
+            <select id="tr" name="default_role"><option value="">None</option>{% for r in all_roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select></div>
         </div>
-        <div class="fg" style="margin:0">
-          <label>Note <span class="hint">(internal only)</span></label>
-          <input type="text" name="note" placeholder="optional note" maxlength="200" class="if-input" style="width:100%">
+        <div class="btn-row">
+          <button type="submit" class="btn btn-primary btn-sm">Make key</button>
+          <label class="check"><input type="checkbox" name="is_pool"> Free to claim</label>
         </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.6rem">
-        <div class="fg" style="margin:0">
-          <label>Author Profile <span class="hint">(assigned to this contributor)</span></label>
-          <select name="author_id" class="if-input" style="width:100%">
-            <option value="">— No Author —</option>
-            {% for a in authors %}
-            <option value="{{ a.id }}">{{ a.name }}{% if a.verified %} ✓{% endif %}{% if a.role_badge %} [{{ a.role_badge }}]{% endif %}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="fg" style="margin:0">
-          <label>Default Role Tag <span class="hint">(on their posts)</span></label>
-          <select name="default_role" class="if-input" style="width:100%">
-            <option value="">— No Role —</option>
-            {% for r in all_roles %}
-            <option value="{{ r }}">{{ r }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-      <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
-        <button type="submit" class="btn btn-primary btn-sm">Generate Token</button>
-        <label class="chk-label">
-          <input type="checkbox" name="is_pool"> Add to Public Pool <span class="hint">(users can claim from /token-access)</span>
-        </label>
-      </div>
-    </form>
+      </form>
+    </div>
   </details>
-
-  {# ── Bulk pool-token generation ── #}
-  <details style="margin-bottom:.8rem">
-    <summary style="font-family:var(--mono);font-size:.6rem;color:var(--text-dim);cursor:pointer;padding:.3rem 0;margin-bottom:.6rem">
-      Bulk generate pool tokens (10 / 25 / 50 / 100) ▾
-    </summary>
-    <form method="POST" action="{{ url_for('token_bulk_create') }}"
-          style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:.75rem"
-          autocomplete="off">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.6rem">
-        <div class="fg" style="margin:0">
-          <label>Count</label>
-          <select name="count" class="if-input" style="width:100%">
-            <option value="10">10 tokens</option>
-            <option value="25">25 tokens</option>
-            <option value="50">50 tokens</option>
-            <option value="100">100 tokens</option>
-          </select>
+  <details class="fold">
+    <summary>Many free keys at once</summary>
+    <div class="fold-body">
+      <form method="POST" action="{{ url_for('token_bulk_create') }}" autocomplete="off">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <div class="grid-2">
+          <div class="field"><label for="bc">How many</label>
+            <select id="bc" name="count">{% for n in [10,25,50,100] %}<option value="{{ n }}">{{ n }} keys</option>{% endfor %}</select></div>
+          <div class="field"><label for="bp">Name start <span class="hint">optional</span></label><input id="bp" type="text" name="prefix" placeholder="Visitor" maxlength="20"></div>
         </div>
-        <div class="fg" style="margin:0">
-          <label>Label Prefix <span class="hint">(auto-numbered, optional)</span></label>
-          <input type="text" name="prefix" placeholder="e.g. Visitor" maxlength="20"
-                 class="if-input" style="width:100%">
-        </div>
-      </div>
-      <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
-        <button type="submit" class="btn btn-primary btn-sm">Bulk Generate</button>
-        <span style="font-family:var(--mono);font-size:.52rem;color:var(--text-dim)">
-          All tokens go to the public pool — claimable at /token-access
-        </span>
-      </div>
-    </form>
+        <button type="submit" class="btn btn-primary btn-sm">Make keys</button>
+      </form>
+    </div>
   </details>
-  {% for t in tokens %}
-  <div class="dash-row {% if t.revoked %}dash-row--dim{% endif %}">
-    <div class="dash-info">
-      <div class="dash-title">
-        {{ t.label }}
-        {% if t.verified %}<svg width="14" height="14" viewBox="0 0 24 24" style="vertical-align:middle;margin-left:.2rem"><path fill="#e2c246" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/></svg>{% endif %}
-        {% if t.revoked %}<span class="badge-rev">Revoked</span>
-        {% elif t.is_pool and t.claimed %}<span style="font-family:var(--mono);font-size:.52rem;color:var(--blue);border:1px solid var(--blue);padding:.05rem .28rem;border-radius:2px">Claimed</span>
-        {% elif t.is_pool %}<span style="font-family:var(--mono);font-size:.52rem;color:var(--teal);border:1px solid var(--teal);padding:.05rem .28rem;border-radius:2px">Pool</span>
-        {% else %}<span class="badge-act">Active</span>{% endif %}
-      </div>
-      <div class="dash-meta">
-        {{ t.created[:16] }}
-        {% if t.note %}&bull; {{ t.note }}{% endif %}
-        {% for a in authors %}{% if a.id == t.author_id %}&bull; Author: <strong style="color:var(--text-head)">{{ a.name }}</strong>{% endif %}{% endfor %}
-        {% if t.default_role %}&bull; Role: <span class="role-badge role-{{ t.default_role }}">{{ t.default_role }}</span>{% endif %}
-        {% if t.is_pool and t.claimed %}&bull; <span style="color:var(--blue)">Claimed: {{ t.claimed_at[:16] }}</span>{% if t.claimed_name %} as <strong style="color:var(--accent)">{{ t.claimed_name }}</strong>{% endif %}{% endif %}
-      </div>
-    </div>
-    <div class="dash-acts">
-      {% if not t.revoked %}
-      <form method="POST" action="{{ url_for('token_verify', tid=t.id) }}" style="display:inline">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-        <button class="btn btn-sm {% if t.verified %}btn-accent{% else %}btn-ghost{% endif %}" title="{% if t.verified %}Remove verified{% else %}Add verified{% endif %}">
-          <svg width="12" height="12" viewBox="0 0 24 24"><path fill="currentColor" d="M9 3L8 6H4l1 4l-3 2l3 2l-1 4h4l1 3l3-2l3 2l1-3h4l-1-4l3-2l-3-2l1-4h-4l-1-3l-3 2zm7 5l1 1l-7 7l-3-3l1-1l2 2z"/></svg>
-        </button>
+  <details class="fold">
+    <summary>New author profile</summary>
+    <div class="fold-body">
+      <form method="POST" action="{{ url_for('author_create') }}" enctype="multipart/form-data" autocomplete="off">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <div class="grid-2">
+          <div class="field"><label for="an">Name</label><input id="an" type="text" name="name" maxlength="80" required></div>
+          <div class="field"><label for="ab">Badge</label>
+            <select id="ab" name="role_badge"><option value="">None</option>{% for r in all_roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select></div>
+        </div>
+        <div class="field"><label for="aa">Photo</label><input id="aa" type="file" name="avatar" accept=".png,.jpg,.jpeg,.gif,.webp"></div>
+        <div class="btn-row"><button type="submit" class="btn btn-primary btn-sm">Add</button><label class="check"><input type="checkbox" name="verified"> Verified</label></div>
       </form>
-      <form method="POST" action="{{ url_for('token_revoke', tid=t.id) }}" onsubmit="return confirm('Revoke this token?')">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-        <button class="btn btn-secondary btn-sm">Revoke</button>
-      </form>
-      {% endif %}
-      <form method="POST" action="{{ url_for('token_delete', tid=t.id) }}" onsubmit="return confirm('Delete permanently?')">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-        <button class="btn btn-danger btn-sm">Del</button>
-      </form>
-    </div>
-  </div>
-  {% else %}<div class="empty">No tokens yet.</div>{% endfor %}
-
-  {# ── ACTIVITY LOG ── #}
-  <details style="margin-top:1.6rem">
-    <summary style="font-family:var(--mono);font-size:.62rem;font-weight:900;text-transform:uppercase;letter-spacing:.15em;color:var(--text-dim);cursor:pointer;padding:.4rem 0;border-bottom:2px solid var(--border)">
-      &#128203; Recent Activity (last 20)
-    </summary>
-    <div style="padding:.6rem 0">
-      {% for entry in activity %}
-      <div style="display:flex;gap:.6rem;padding:.3rem 0;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:.6rem">
-        <span style="color:var(--text-dim);flex-shrink:0">{{ entry.ts[:16] }}</span>
-        <span style="color:var(--accent);flex-shrink:0">{{ entry.action }}</span>
-        <span style="color:var(--text-dim)">{{ entry.detail }}</span>
-      </div>
-      {% else %}
-      <div style="font-family:var(--mono);font-size:.62rem;color:var(--text-dim);padding:.4rem 0">No activity yet.</div>
-      {% endfor %}
     </div>
   </details>
 
+  <div class="section-title">Keys</div>
+  <div class="rows">
+    {% for t in tokens %}
+    <div class="row{% if t.revoked %} dim{% endif %}">
+      <div class="row-main">
+        <div class="row-title">{{ t.claimed_name or t.label }}{% if t.verified %}{{ i.verified() }}{% endif %}
+          {% if t.revoked %}<span class="pill pill-red">Revoked</span>
+          {% elif t.is_pool and t.claimed %}<span class="pill pill-blue">Claimed</span>
+          {% elif t.is_pool %}<span class="pill pill-gray">Free</span>
+          {% else %}<span class="pill pill-green">Active</span>{% endif %}
+        </div>
+        <div class="row-meta">
+          <span>{{ t.created[:16] }}</span>
+          {% if t.claimed_name and t.claimed_name != t.label %}<span>{{ t.label }}</span>{% endif %}
+          {% if t.note %}<span>{{ t.note }}</span>{% endif %}
+          {% for a in authors %}{% if a.id == t.author_id %}<span>Author: {{ a.name }}</span>{% endif %}{% endfor %}
+          {% if t.default_role %}<span class="role">{{ t.default_role }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="row-acts">
+        {% if not t.revoked %}
+        <form method="POST" action="{{ url_for('token_verify', tid=t.id) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-ghost btn-xs">{% if t.verified %}Unverify{% else %}Verify{% endif %}</button>
+        </form>
+        <form method="POST" action="{{ url_for('token_revoke', tid=t.id) }}" onsubmit="return confirm('Revoke this key?')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-ghost btn-xs">Revoke</button>
+        </form>
+        {% endif %}
+        <form method="POST" action="{{ url_for('token_delete', tid=t.id) }}" onsubmit="return confirm('Delete this key for good?')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-danger btn-xs">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% else %}<p class="empty">No keys yet.</p>{% endfor %}
+  </div>
+
+  <div class="section-title">Author profiles</div>
+  <div class="rows">
+    {% for a in authors %}
+    <div class="row" style="align-items:flex-start">
+      {{ i.avatar(a.avatar, a.name, 'av-md') }}
+      <div class="row-main">
+        <div class="row-title">{{ a.name }}{% if a.verified %}{{ i.verified() }}{% endif %}{% if a.role_badge %}<span class="role">{{ a.role_badge }}</span>{% endif %}</div>
+        <details style="margin-top:6px">
+          <summary class="muted" style="cursor:pointer;font-size:.84rem">Edit</summary>
+          <form method="POST" action="{{ url_for('author_edit', aid=a.id) }}" enctype="multipart/form-data" autocomplete="off" style="padding-top:10px">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <div class="grid-2">
+              <div class="field"><label>Name</label><input type="text" name="name" value="{{ a.name }}" maxlength="80"></div>
+              <div class="field"><label>Badge</label>
+                <select name="role_badge"><option value="">None</option>{% for r in all_roles %}<option value="{{ r }}" {% if r == a.role_badge %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>
+            </div>
+            <div class="field"><label>New photo</label><input type="file" name="avatar" accept=".png,.jpg,.jpeg,.gif,.webp"></div>
+            <div class="btn-row"><button type="submit" class="btn btn-ghost btn-sm">Save</button><label class="check"><input type="checkbox" name="verified" {% if a.verified %}checked{% endif %}> Verified</label></div>
+          </form>
+        </details>
+      </div>
+      <div class="row-acts">
+        <form method="POST" action="{{ url_for('author_delete', aid=a.id) }}" onsubmit="return confirm('Delete this author?')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-danger btn-xs">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% else %}<p class="empty">No author profiles yet.</p>{% endfor %}
+  </div>
+
+  {% elif tab == 'payments' %}
+  <h1 class="page-title">Payments</h1>
+  <div class="stats-line" style="margin-bottom:14px"><span><b>{{ pay_sum.n }}</b> paid</span><span><b>{{ "%g"|format(pay_sum.firo) }}</b> FIRO received</span><span>Price <b>{{ verify_amount }}</b> FIRO</span></div>
+  <div class="kv" style="margin-bottom:10px">
+    <div><span>API key</span><span>{% if pay_ready.api %}<span class="pill pill-green">Set</span>{% else %}<span class="pill pill-red">Missing</span>{% endif %}</span></div>
+    <div><span>Webhook secret</span><span>{% if pay_ready.hook %}<span class="pill pill-green">Set</span>{% else %}<span class="pill pill-red">Missing</span>{% endif %}</span></div>
+    <div><span>Site address (SITE_BASE_URL)</span><span>{% if pay_ready.base %}<span class="pill pill-green">Set</span>{% else %}<span class="pill pill-amber">Not set</span>{% endif %}</span></div>
+    <div><span>Webhook URL for FiroGate</span><span class="mono">{{ pay_ready.hook_url }}</span></div>
+  </div>
+  <div class="section-title">Latest 100</div>
+  <div class="rows">
+    {% for pm in payments %}
+    <div class="row">
+      <div class="row-main">
+        <div class="row-title">{{ pm.who or 'Deleted key' }} {{ i.pay_status(pm.status) }}<span class="role">{% if pm.kind == 'product' %}{{ pm.product_title or 'Product' }}{% else %}Badge{% endif %}</span></div>
+        <div class="row-meta">
+          <span>{{ "%g"|format(pm.amount_firo) }} FIRO{% if pm.amount_received and pm.amount_received != pm.amount_firo %} (got {{ "%g"|format(pm.amount_received) }}){% endif %}</span>
+          <span>{{ (pm.confirmed_at or pm.created)[:16] }}</span>
+          <span class="mono">{{ pm.order_id }}</span>
+          {% if pm.txid %}<span class="mono" title="{{ pm.txid }}">tx {{ pm.txid[:10] }}…</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% else %}<p class="empty">No payments yet.</p>{% endfor %}
+  </div>
+
+  {% elif tab == 'products' %}
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Products</h1>
+      <div class="stats-line"><span><b>{{ products|selectattr('active')|list|length }}</b> in shop</span><span><b>{{ products|sum(attribute='sales') }}</b> sold</span><span><b>{{ "%g"|format(products|sum(attribute='earned')) }}</b> FIRO</span></div>
+    </div>
+    <a href="{{ url_for('admin_product_new') }}" class="btn btn-primary btn-sm">Add product</a>
+  </div>
+  {% if shop_enabled != '1' %}<div class="notice notice-info">The shop is off. Turn it on in Settings.</div>{% endif %}
+  <div class="rows">
+    {% for p in products %}
+    <div class="row{% if not p.active %} dim{% endif %}">
+      {% if p.image %}<img src="{{ url_for('static', filename='uploads/' ~ p.image) }}" class="row-thumb" alt="">{% else %}<span class="row-thumb item-ph" style="font-size:1.2rem">{{ p.title[0]|upper }}</span>{% endif %}
+      <div class="row-main">
+        <div class="row-title"><a href="{{ url_for('product_page', pid=p.id) }}">{{ p.title }}</a>{% if not p.active %}<span class="pill pill-gray">Hidden</span>{% endif %}</div>
+        <div class="row-meta">
+          <span>{{ "%g"|format(p.price_firo) }} FIRO</span><span>{{ p.sales }} sold</span>
+          {% if p.n_ratings %}<span>{{ i.stars(p.avg_stars) }} {{ "%.1f"|format(p.avg_stars) }} ({{ p.n_ratings }})</span>{% endif %}
+          {% if p.file_name %}<span>File</span>{% endif %}{% if p.secret_text %}<span>Text</span>{% endif %}
+        </div>
+      </div>
+      <div class="row-acts">
+        <a href="{{ url_for('admin_product_edit', pid=p.id) }}" class="btn btn-ghost btn-xs">Edit</a>
+        <form method="POST" action="{{ url_for('admin_product_delete', pid=p.id) }}" onsubmit="return confirm('{% if p.sales %}People bought this, so it will be hidden, not deleted. Continue?{% else %}Delete this product?{% endif %}')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-danger btn-xs">{% if p.sales %}Hide{% else %}Delete{% endif %}</button>
+        </form>
+      </div>
+    </div>
+    {% else %}<p class="empty">No products yet. Add your first one.</p>{% endfor %}
+  </div>
+
+  {% elif tab == 'settings' %}
+  <h1 class="page-title" style="margin-bottom:16px">Settings</h1>
+  <form method="POST" action="{{ url_for('admin_settings') }}" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <div class="grid-2">
+      <div class="field"><label for="st">Site name</label><input id="st" type="text" name="site_title" value="{{ site_title }}" maxlength="60"></div>
+      <div class="field"><label for="sg">Tagline</label><input id="sg" type="text" name="site_tagline" value="{{ site_tagline }}" maxlength="120"></div>
+      <div class="field"><label for="pp">Posts per page</label>
+        <select id="pp" name="posts_per_page">{% for n in [5,10,15,20,25] %}<option value="{{ n }}" {% if ppp|int == n %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></div>
+      <div class="field" style="justify-content:flex-end"><label class="check"><input type="checkbox" name="maintenance" {% if maintenance=='1' %}checked{% endif %}> Maintenance mode</label></div>
+      <div class="field" style="justify-content:flex-end"><label class="check"><input type="checkbox" name="shop_enabled" {% if shop_enabled=='1' %}checked{% endif %}> Shop on</label></div>
+      <div class="field"><label for="sv">Who can see the shop</label>
+        <select id="sv" name="shop_visibility">
+          <option value="everyone" {% if shop_visibility=='everyone' %}selected{% endif %}>Everyone (buying needs an account)</option>
+          <option value="members" {% if shop_visibility=='members' %}selected{% endif %}>Members only</option>
+        </select></div>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Save</button>
+  </form>
+
+  <div class="section-title">Recent activity</div>
+  <div class="log">
+    {% for entry in activity %}
+    <div><span>{{ entry.ts[:16] }}</span><b>{{ entry.action }}</b><span>{{ entry.detail }}</span></div>
+    {% else %}<p class="empty">Nothing yet.</p>{% endfor %}
+  </div>
+  {% endif %}
 </div>
-<div></div></div>
 {% endblock %}

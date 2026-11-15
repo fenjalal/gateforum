@@ -1,0 +1,11 @@
+{% set ep = request.endpoint or '' %}
+{% set tab = request.args.get('tab', 'posts') %}
+<nav class="tabs" aria-label="Admin">
+  <a href="{{ url_for('admin_dashboard') }}" {% if ep == 'admin_dashboard' and tab == 'posts' %}aria-current="page"{% endif %}>Posts</a>
+  <a href="{{ url_for('admin_dashboard', tab='people') }}" {% if ep == 'admin_dashboard' and tab == 'people' %}aria-current="page"{% endif %}>People</a>
+  <a href="{{ url_for('admin_dashboard', tab='products') }}" {% if (ep == 'admin_dashboard' and tab == 'products') or ep.startswith('admin_product') %}aria-current="page"{% endif %}>Products</a>
+  <a href="{{ url_for('admin_dashboard', tab='payments') }}" {% if ep == 'admin_dashboard' and tab == 'payments' %}aria-current="page"{% endif %}>Payments</a>
+  <a href="{{ url_for('admin_reports') }}" {% if ep == 'admin_reports' %}aria-current="page"{% endif %}>Reports</a>
+  <a href="{{ url_for('admin_dashboard', tab='settings') }}" {% if ep == 'admin_dashboard' and tab == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+  <a href="{{ url_for('admin_logout') }}">Sign out</a>
+</nav>

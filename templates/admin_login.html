@@ -1,16 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Access — GateForum{% endblock %}
+{% block title %}Sign in{% endblock %}
 {% block content %}
-<div class="page-grid"><div></div>
-<div class="form-wrap">
-  <div class="form-title">Secure Access</div>
-  {% if error %}<div class="alert-err">{{ error }}</div>{% endif %}
-  <form method="POST" autocomplete="off">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-    <div class="fg"><label>Passphrase</label>
-    <input type="password" name="password" required autofocus autocomplete="current-password"></div>
-    <button type="submit" class="btn btn-primary">Authenticate</button>
-  </form>
+<div class="auth">
+  <div class="panel">
+    <h1>Sign in</h1>
+    <p class="lead">&nbsp;</p>
+    {% if error %}<div class="notice notice-err" role="alert">{{ error }}</div>{% endif %}
+    <form method="POST" autocomplete="off">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="pw">Password</label>
+        <input id="pw" type="password" name="password" required autofocus autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+    </form>
+  </div>
 </div>
-<div></div></div>
 {% endblock %}
