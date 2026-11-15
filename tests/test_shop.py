@@ -2,8 +2,8 @@ import hashlib, hmac, io, json, os, sys, tempfile, time, unittest, uuid
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-os.environ.setdefault("DNet_ADMIN_PREFIX", "t-admin")
-os.environ.setdefault("DNet_ADMIN_SUFFIX", "t-login")
+os.environ.setdefault("GATEFORUM_ADMIN_PREFIX", "t-admin")
+os.environ.setdefault("GATEFORUM_ADMIN_SUFFIX", "t-login")
 os.environ["SITE_BASE_URL"] = "https://forum.example"
 
 import app as gf  # noqa: E402

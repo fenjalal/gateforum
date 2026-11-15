@@ -7,9 +7,7 @@ instance/.secret_key
 accesskeyadmindd.txt
 
 # Database — contains user data
-instance/DNet.db
 instance/*.db
-instance/DNet.db
 instance/
 # User-uploaded content
 # Static content

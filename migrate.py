@@ -4,20 +4,48 @@ GateForum — DB migration script.
 Run once after any upgrade:  python3 migrate.py
 Safe to run multiple times (fully idempotent).
 """
-import sqlite3, pathlib, sys, os, time, secrets, hashlib
+import sqlite3, pathlib, re, sys, os, time, secrets, hashlib
 
-# ── Find DB ────────────────────────────────────────────────────────────────
-for candidate in [
-    pathlib.Path(__file__).parent / "instance" / "DNet.db",
-    pathlib.Path("instance/DNet.db"),
-    pathlib.Path("DNet.db"),
-]:
-    if candidate.exists():
-        DB = candidate
-        break
-else:
-    print("ERROR: Cannot find DNet.db")
-    print("Run this script from your project folder.")
+ROOT = pathlib.Path(__file__).resolve().parent
+INSTANCE = ROOT / "instance"
+DB = INSTANCE / "gateforum.db"
+
+# ── Older installs: move to the GateForum names ───────────────────────────
+# The database file and the .env keys used an older prefix. Rename them once.
+if not DB.exists():
+    old_dbs = [p for p in INSTANCE.glob("*.db") if p.name != DB.name]
+    if len(old_dbs) == 1:
+        old_dbs[0].rename(DB)
+        for ext in ("-wal", "-shm"):
+            side = old_dbs[0].with_name(old_dbs[0].name + ext)
+            if side.exists():
+                side.rename(DB.with_name(DB.name + ext))
+        print(f"Renamed database to {DB.name}")
+
+ENV_FILE = ROOT / ".env"
+_KEYS = ("ADMIN_HASH", "ADMIN_PREFIX", "ADMIN_SUFFIX", "HOST", "PORT", "SECRET")
+if ENV_FILE.exists():
+    lines = ENV_FILE.read_text().splitlines()
+    have = {l.split("=", 1)[0] for l in lines if "=" in l}
+    old = {k[: -len("_ADMIN_HASH")] for k in have
+           if k.endswith("_ADMIN_HASH") and k != "GATEFORUM_ADMIN_HASH"}
+    changed = False
+    for i, line in enumerate(lines):
+        m = re.match(r"^([A-Za-z]+)_(%s)=" % "|".join(_KEYS), line)
+        if m and m.group(1) in old:
+            new_key = "GATEFORUM_" + m.group(2)
+            if new_key not in have:
+                lines[i] = new_key + line[len(m.group(1)) + 1 + len(m.group(2)):]
+                have.add(new_key)
+                changed = True
+    if changed:
+        ENV_FILE.write_text("\n".join(lines) + "\n")
+        os.chmod(ENV_FILE, 0o600)
+        print("Updated .env key names to GATEFORUM_")
+
+if not DB.exists():
+    print("ERROR: Cannot find instance/gateforum.db")
+    print("Start the app once to create it, then run this again.")
     sys.exit(1)
 
 print(f"GateForum DB Migration")

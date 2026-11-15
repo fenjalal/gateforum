@@ -53,7 +53,7 @@ Verified badges are granted via a one-time Firo (FIRO) cryptocurrency payment pr
 - Reply-to support
 
 ### Admin Panel
-- Hidden URL: `/{DNet_ADMIN_PREFIX}/{DNet_ADMIN_SUFFIX}`
+- Hidden URL: `/{GATEFORUM_ADMIN_PREFIX}/{GATEFORUM_ADMIN_SUFFIX}`
 - Posts: create, edit, delete, pin (up to 3 pinned)
 - Authors: create/edit/delete with avatars and role badges
 - Tokens: create, bulk-create, revoke, verify toggle, delete

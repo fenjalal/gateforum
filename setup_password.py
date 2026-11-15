@@ -20,12 +20,6 @@ def main():
     # Load existing .env
     existing = dotenv_values(ENV_FILE) if os.path.exists(ENV_FILE) else {}
 
-    # Warn if old Fernet keys exist
-    if existing.get("DNet_FERNET_KEY") or existing.get("DNet_ADMIN_BLOB"):
-        print("[!] Old Fernet keys found (DNet_FERNET_KEY / DNet_ADMIN_BLOB).")
-        print("    These will be removed — Fernet has been replaced with PBKDF2.")
-        print()
-
     # Get password
     while True:
         try:
@@ -43,8 +37,8 @@ def main():
     admin_hash = pbkdf2_hash(pw)
     print(f"\n[+] Password hashed with PBKDF2-HMAC-SHA256 ({ITERATIONS:,} iterations)")
 
-    # Rebuild .env preserving existing keys, removing Fernet junk
-    SKIP_KEYS = {"DNet_FERNET_KEY", "DNet_ADMIN_BLOB", "DNet_ADMIN_HASH"}
+    # Rebuild .env, keeping every other key
+    SKIP_KEYS = {"GATEFORUM_ADMIN_HASH"}
     lines = []
     if os.path.exists(ENV_FILE):
         with open(ENV_FILE) as fh:
@@ -57,19 +51,19 @@ def main():
                     lines.append(line.rstrip())
 
     # Add new hash
-    lines.append(f"DNet_ADMIN_HASH={admin_hash}")
+    lines.append(f"GATEFORUM_ADMIN_HASH={admin_hash}")
 
     # Give the admin panel a random, private address if none is set yet
-    if not existing.get("DNet_ADMIN_PREFIX") or not existing.get("DNet_ADMIN_SUFFIX"):
-        lines = [l for l in lines if not l.startswith(("DNet_ADMIN_PREFIX=", "DNet_ADMIN_SUFFIX="))]
+    if not existing.get("GATEFORUM_ADMIN_PREFIX") or not existing.get("GATEFORUM_ADMIN_SUFFIX"):
+        lines = [l for l in lines if not l.startswith(("GATEFORUM_ADMIN_PREFIX=", "GATEFORUM_ADMIN_SUFFIX="))]
         lines += [
             "",
             "# Admin panel address (keep it private)",
-            f"DNet_ADMIN_PREFIX={secrets.token_urlsafe(12)}",
-            f"DNet_ADMIN_SUFFIX={secrets.token_urlsafe(12)}",
+            f"GATEFORUM_ADMIN_PREFIX={secrets.token_urlsafe(12)}",
+            f"GATEFORUM_ADMIN_SUFFIX={secrets.token_urlsafe(12)}",
         ]
-    if not existing.get("DNet_HOST"):
-        lines += ["", "# Gunicorn bind", "DNet_HOST=127.0.0.1", "DNet_PORT=5000"]
+    if not existing.get("GATEFORUM_HOST"):
+        lines += ["", "# Gunicorn bind", "GATEFORUM_HOST=127.0.0.1", "GATEFORUM_PORT=5000"]
 
     with open(ENV_FILE, "w") as fh:
         fh.write("\n".join(lines) + "\n")
