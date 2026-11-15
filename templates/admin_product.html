@@ -26,7 +26,7 @@
     <div class="section-title" style="margin-top:26px">What the buyer gets</div>
     <p class="hint" style="margin:10px 0 14px">Only people who paid can see these. Add a file, the text, or both.</p>
     <div class="field">
-      <label for="fl">File <span class="hint">up to 20 MB. Stored privately, never public.</span></label>
+      <label for="fl">File <span class="hint">any type (zip, rar, iso, exe, pdf…), up to {{ "%.0f"|format(max_mb / 1024) ~ " GB" if max_mb >= 1024 else max_mb ~ " MB" }}. Kept private.</span></label>
       {% if p and p.file_name %}<div class="row-meta" style="margin:0 0 6px"><span class="mono">{{ p.file_label }}</span><span>{{ p.file_size|filesize }}</span></div>
       <label class="check"><input type="checkbox" name="remove_file"> Remove file</label>{% endif %}
       <input id="fl" type="file" name="file">

@@ -98,7 +98,12 @@ How it works:
 ### Shop (digital products)
 
 Admins add products under **Admin, Products**: name, price in FIRO, cover image, description,
-and what the buyer gets (a private file up to 20 MB, a private text such as a license key, or both).
+and what the buyer gets (a private file of any type such as zip, rar, iso, exe or pdf, a private
+text such as a license key, or both).
+
+The file size limit is 2 GB by default. Change it with `SHOP_MAX_UPLOAD_MB` in `.env`. If you run
+nginx in front, raise `client_max_body_size` to match. Big uploads only work for a signed-in admin;
+the rest of the site keeps a 20 MB limit.
 
 - Anyone can browse (or only members, set in **Admin, Settings**). Buying always needs an account.
   There is no email anywhere.

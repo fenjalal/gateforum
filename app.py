@@ -468,9 +468,14 @@ def _guard():
         if br in ref:
             abort(403)
 
-    # Oversized Content-Length
+    # Oversized Content-Length (admins uploading a product get a bigger limit)
+    limit = app.config["MAX_CONTENT_LENGTH"]
+    if (request.method == "POST" and session.get("admin")
+            and request.path.startswith(f"/{ADMIN_PREFIX}/products/")):
+        limit = PRODUCT_FILE_MAX + 25 * 1024 * 1024
+        request.max_content_length = limit
     cl = request.content_length
-    if cl and cl > app.config["MAX_CONTENT_LENGTH"]:
+    if cl and cl > limit:
         abort(413)
 
     # Payload injection check on form data (non-file, non-admin POST only)
@@ -2392,9 +2397,7 @@ def firo_webhook():
 # ── Shop (digital products, paid with FiroGate) ────────────────────────────
 
 PRODUCT_DIR       = os.path.join(BASE_DIR, "instance", "products")
-PRODUCT_FILE_MAX  = 20 * 1024 * 1024
-PRODUCT_FILE_EXTS = {"zip", "7z", "gz", "tar", "pdf", "epub", "txt", "md", "csv", "json",
-                     "png", "jpg", "jpeg", "webp", "gif", "mp3", "ogg", "flac", "wav", "mp4", "webm"}
+PRODUCT_FILE_MAX  = max(1, int(os.environ.get("SHOP_MAX_UPLOAD_MB", "2048") or 2048)) * 1024 * 1024
 _rl_rate = defaultdict(list)
 _rl_dl   = defaultdict(list)
 os.makedirs(PRODUCT_DIR, exist_ok=True)
@@ -2441,29 +2444,42 @@ def _owns(db, tok, pid: str) -> bool:
 
 
 def _clean_label(name: str) -> str:
-    base = os.path.basename(name or "").strip()
-    base = re.sub(r"[^A-Za-z0-9._ -]+", "", base)[:80].strip(" .")
+    base = os.path.basename((name or "").replace("\\", "/")).strip()
+    base = re.sub(r"[^A-Za-z0-9._ ()+-]+", "", base)[:120].strip(" .")
     return base or "download"
 
 
 def _save_product_file(f) -> tuple[str, str, int] | None:
-    """Store an uploaded product file outside static/. Returns (stored, label, size)."""
+    """Store an uploaded product file outside static/ in chunks. Returns (stored, label, size).
+
+    Any file type is fine: it is saved under a random .bin name, never run or opened by the
+    server, and only ever sent back to buyers as a download."""
     if not f or not f.filename:
         return None
-    ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else ""
-    if ext not in PRODUCT_FILE_EXTS:
-        raise ValueError("That file type is not allowed.")
-    data = f.read(PRODUCT_FILE_MAX + 1)
-    if len(data) > PRODUCT_FILE_MAX:
-        raise ValueError("File is bigger than 20 MB.")
-    if not data:
-        raise ValueError("File is empty.")
     stored = f"{uuid.uuid4().hex}.bin"
-    path = os.path.join(PRODUCT_DIR, stored)
-    with open(path, "wb") as fh:
-        fh.write(data)
-    os.chmod(path, 0o600)
-    return stored, _clean_label(f.filename), len(data)
+    path   = os.path.join(PRODUCT_DIR, stored)
+    size   = 0
+    try:
+        with open(path, "wb") as fh:
+            os.chmod(path, 0o600)
+            while True:
+                chunk = f.stream.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > PRODUCT_FILE_MAX:
+                    raise ValueError(f"File is bigger than {PRODUCT_FILE_MAX // 1048576} MB.")
+                fh.write(chunk)
+    except Exception:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        raise
+    if size == 0:
+        os.remove(path)
+        raise ValueError("File is empty.")
+    return stored, _clean_label(f.filename), size
 
 
 def _delete_product_file(stored: str):
@@ -2706,6 +2722,9 @@ def _product_form(db, existing=None):
         saved = _save_product_file(request.files.get("file"))
     except ValueError as exc:
         return None, str(exc)
+    except OSError:
+        app.logger.exception("product file save failed")
+        return None, "Could not save the file. Check free disk space."
     if saved:
         vals["file_name"], vals["file_label"], vals["file_size"] = saved
     elif existing is not None and f.get("remove_file"):
@@ -2737,7 +2756,7 @@ def admin_product_new():
             db.commit()
             log_action("product_created", vals["title"][:80])
             return redirect(url_for("admin_dashboard", tab="products"))
-    return render_template("admin_product.html", p=None, error=error)
+    return render_template("admin_product.html", p=None, error=error, max_mb=PRODUCT_FILE_MAX // 1048576)
 
 
 @app.route(f"/{ADMIN_PREFIX}/products/<pid>", methods=["GET", "POST"])
@@ -2760,7 +2779,7 @@ def admin_product_edit(pid):
             db.commit()
             log_action("product_updated", vals["title"][:80])
             return redirect(url_for("admin_dashboard", tab="products"))
-    return render_template("admin_product.html", p=prod, error=error)
+    return render_template("admin_product.html", p=prod, error=error, max_mb=PRODUCT_FILE_MAX // 1048576)
 
 
 @app.route(f"/{ADMIN_PREFIX}/products/<pid>/delete", methods=["POST"])

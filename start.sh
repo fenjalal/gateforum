@@ -14,7 +14,7 @@ exec python3 -m gunicorn \
   --bind "$HOST:$PORT" \
   --workers 2 \
   --threads 2 \
-  --timeout 120 \
+  --timeout 900 \
   --keep-alive 5 \
   --limit-request-line 8190 \
   --limit-request-fields 100 \

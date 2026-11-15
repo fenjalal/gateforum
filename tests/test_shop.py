@@ -162,9 +162,35 @@ class ShopTests(unittest.TestCase):
         self.assertRegex(row["file_name"], r"^[0-9a-f]{32}\.bin$")
         self.assertEqual(row["file_label"], "evil name.zip")
         self.assertTrue(os.path.isfile(os.path.join(self.pdir, row["file_name"])))
-        bad = c.post("/t-admin/products/new", headers=B, content_type="multipart/form-data", data={
-            "_csrf": CSRF, "title": "Bad", "price_firo": "2", "file": (io.BytesIO(b"x"), "run.exe")})
-        self.assertIn(b"not allowed", bad.data)
+
+    def test_any_file_type_and_big_files(self):
+        c = self.client(admin=True)
+        big = b"x" * (25 * 1024 * 1024)
+        for name, data in (("disk.iso", big), ("pack.rar", b"Rar!"), ("setup.exe", b"MZ")):
+            r = c.post("/t-admin/products/new", headers=B, content_type="multipart/form-data", data={
+                "_csrf": CSRF, "title": name, "price_firo": "1", "active": "on", "file": (io.BytesIO(data), name)})
+            self.assertEqual(r.status_code, 302, name)
+            row = self.q("SELECT file_name, file_label, file_size FROM products WHERE title=?", name)
+            self.assertEqual((row["file_label"], row["file_size"]), (name, len(data)))
+            self.assertRegex(row["file_name"], r"^[0-9a-f]{32}\.bin$")
+
+    def test_file_over_limit_refused_and_not_kept(self):
+        old = gf.PRODUCT_FILE_MAX
+        gf.PRODUCT_FILE_MAX = 1024
+        try:
+            before = set(os.listdir(self.pdir))
+            r = self.client(admin=True).post("/t-admin/products/new", headers=B, content_type="multipart/form-data", data={
+                "_csrf": CSRF, "title": "Huge", "price_firo": "1", "file": (io.BytesIO(b"y" * 5000), "huge.zip")})
+            self.assertIn(b"bigger than", r.data)
+            self.assertEqual(set(os.listdir(self.pdir)), before)
+            self.assertIsNone(self.q("SELECT 1 FROM products WHERE title='Huge'"))
+        finally:
+            gf.PRODUCT_FILE_MAX = old
+
+    def test_big_upload_only_for_admin(self):
+        r = self.client("buyer-key").post("/t-admin/products/new", headers=B, content_type="multipart/form-data",
+                                          data={"_csrf": CSRF, "file": (io.BytesIO(b"z" * (21 * 1024 * 1024)), "a.zip")})
+        self.assertEqual(r.status_code, 413)
 
     def test_badge_payment_does_not_unlock_product(self):
         self.run_sql("INSERT INTO firo_payments (id,token_id,order_id,fg_payment_id,amount_firo,status,checkout_url,created) "
