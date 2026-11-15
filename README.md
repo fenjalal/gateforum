@@ -95,6 +95,11 @@ bash start.sh
 
 `migrate.py` is safe to run many times. On older installs it also renames the database and `.env` keys to the new names.
 
+## Version
+
+The version is in the `VERSION` file and shows in **Admin, Settings**.
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each one.
+
 ## Tor
 
 **Debian / Ubuntu**
@@ -121,6 +126,8 @@ Then set `SITE_BASE_URL` in `.env` to your .onion address.
 
 ```
 app.py              The app
+VERSION             Current version
+CHANGELOG.md        What changed
 setup_password.py   Sets the admin password
 migrate.py          Updates the database
 start.sh            Live start

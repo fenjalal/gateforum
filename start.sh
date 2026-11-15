@@ -8,7 +8,8 @@ fi
 set -a; source .env 2>/dev/null || export $(grep -v '^#' .env | xargs); set +a
 HOST="${GATEFORUM_HOST:-127.0.0.1}"
 PORT="${GATEFORUM_PORT:-5000}"
-echo "Starting GateForum on $HOST:$PORT"
+VERSION="$(cat VERSION 2>/dev/null)"
+echo "Starting GateForum ${VERSION} on $HOST:$PORT"
 echo "Admin: http://$HOST:$PORT/${GATEFORUM_ADMIN_PREFIX}/${GATEFORUM_ADMIN_SUFFIX}"
 exec python3 -m gunicorn \
   --bind "$HOST:$PORT" \

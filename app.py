@@ -156,6 +156,15 @@ from markupsafe import Markup
 
 # ── Bootstrap ──────────────────────────────────────────────────────────────
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
+def _read_version() -> str:
+    try:
+        with open(os.path.join(BASE_DIR, "VERSION")) as fh:
+            return fh.read().strip() or "0.0.0"
+    except OSError:
+        return "0.0.0"
+
+APP_VERSION = _read_version()
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 for d in ("instance", "static/uploads", "static/avatars"):
@@ -3511,6 +3520,7 @@ def _ctx():
         "shop_link":        _shop_visible(),
         "site_title":       s,
         "site_tagline":     get_setting("site_tagline",""),
+        "app_version":      APP_VERSION,
     }
 
 if __name__ == "__main__":
